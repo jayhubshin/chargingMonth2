@@ -153,20 +153,27 @@ def _pick_series(df, candidates):
 
 
 def classify_model_vectorized(df):
-    AG = _pick_series(df, _MODELNM_COL_CANDIDATES)   # 모델명
-    AH = _pick_series(df, _TYPE_COL_CANDIDATES)       # 급속/완속
-    AJ = _pick_series(df, _KW_COL_CANDIDATES)         # 용량
+    # AD=시리얼번호, AG=모델명, AH=급속/완속, AJ=용량
+    AD = _pick_series(df, ['시리얼번호'])
+    AG = _pick_series(df, ['충전기모델명', '모델명'])
+    AH = _pick_series(df, ['충전기유형', '급속/완속'])
+    AJ = _pick_series(df, ['충전용량', '충전기용량'])
 
-    # ★ 시리얼번호 읽기
-    SN = _pick_series(df, ['시리얼번호'])
+    # ★ ad4~ad11 모두 시리얼번호(AD) 기준
+    ad4  = AD.str[:4]
+    ad3  = AD.str[:3]
+    ad6  = AD.str[:6]
+    ad11 = AD.str[:11]
+
+    # 모델명 앞자리 (급속 분류용)
+    ag4 = AG.str[:4]
 
     is_fast = (AH == '급속')
-    slow    = ~is_fast
 
-    # ── 급속 분류 ─────────────────────────────────────
+    # ── 급속 분류 (모델명 기준) ────────────────────────
     fast_conds = [
-        is_fast & AG.str.startswith('S0F1'),
-        is_fast & AG.str.startswith('S0F5'),
+        is_fast & (ag4 == 'S0F1'),
+        is_fast & (ag4 == 'S0F5'),
         is_fast & AG.str.startswith('EVQ-') & (AJ == '100'),
         is_fast & AG.str.startswith('EVQ-') & (AJ == '50'),
         is_fast & AG.str.startswith('MAXE'),
@@ -178,6 +185,7 @@ def classify_model_vectorized(df):
         is_fast & AG.str.startswith('SVI-'),
         is_fast & AG.str.startswith('JC-69'),
         is_fast & AG.str.startswith('UK-Q'),
+        is_fast & AG.str.startswith('CEC-'),
     ]
     fast_vals = [
         '급속스필_100', '급속스필_50',
@@ -185,56 +193,71 @@ def classify_model_vectorized(df):
         '급속PNE_200',  '급속PNE_150',
         '급속애플망고_200',
         '급속SK_100',   '급속SK_200',
-        '급속코스텔',
+        '급속코스텔_50',
         '급속스필_SVI',
         '급속중앙제어_50',
         '급속알박_50',
+        '급속기타',
     ]
-
     result = pd.Series(
         np.select(fast_conds, fast_vals, default='__PENDING__'),
         index=df.index
     )
     result[(result == '__PENDING__') & is_fast] = '급속기타'
 
-    # ── 완속 분류 ─────────────────────────────────────
+    # ── 완속 분류 (시리얼번호 AD 기준, 원본 로직 그대로) ──
+    slow = ~is_fast
     slow_conds = [
-        # 알박 완속
-        slow & AG.str.startswith('UK-N'),
-        # PNE 완속 EVL 시리즈
-        slow & AG.str.contains('3J10', na=False),          # 10kW
-        slow & AG.str.startswith('EVL-1C'),                # 신형대
-        # ★ EVL-1107: 시리얼번호 SBDAC → 신형대, 나머지 → 신형소
-        slow & AG.str.startswith('EVL-1107') & SN.str.startswith('SBDAC'),
-        slow & AG.str.startswith('EVL-1107') & ~SN.str.startswith('SBDAC'),
-        slow & AG.str.startswith('EVL-'),                  # 구형대 (나머지)
-        # 스필 완속
-        slow & AG.str.startswith('S0L'),
-        slow & AG.str.startswith('S0W'),
-        # 이카플러그
-        slow & AG.str.startswith('CPT'),
-        slow & AG.str.startswith('CPW'),
-        # SK 완속
-        slow & AG.str.startswith('SC7K'),
-        # 중앙제어 완속
-        slow & AG.str.startswith('JC-6'),
-        # PNE 완속 EVS
-        slow & AG.str.startswith('EVS'),
-        # MAXERO 완속
-        slow & AG.str.startswith('MAXE'),
+        # 알박구형: 시리얼 앞4=NC07
+        slow & (ad4 == 'NC07'),
+        # 알박신형: 시리얼 앞4=23NA/22NA/24NA/25NA
+        slow & (ad4.isin(['23NA', '22NA', '24NA', '25NA'])),
+        # 10kW: 시리얼에 3J10 포함
+        slow & AD.str.contains('3J10', na=False),
+        # 신형대: 시리얼 앞11=EVL-1C-22CQ
+        slow & (ad11 == 'EVL-1C-22CQ'),
+        # 구형대: 시리얼 앞6=EVL-1C (22CQ 제외)
+        slow & (ad6 == 'EVL-1C') & (ad11 != 'EVL-1C-22CQ'),
+        # 신형대: 시리얼 앞4=EVL- + 시리얼에 1107 포함 (EVL-1C 제외)
+        slow & (ad4 == 'EVL-') & AD.str.contains('1107', na=False) & (ad6 != 'EVL-1C'),
+        # 구형대: 시리얼 앞4=EVL- + 시리얼에 1107 없음 (EVL-1C 제외)
+        slow & (ad4 == 'EVL-') & ~AD.str.contains('1107', na=False) & (ad6 != 'EVL-1C'),
+        # 신형대: 시리얼 앞4=SBDA
+        slow & (ad4 == 'SBDA'),
+        # 신형소: 시리얼 앞4=SBAA
+        slow & (ad4 == 'SBAA'),
+        # F01: 시리얼 앞4=SBPA + 시리얼에 F01 포함
+        slow & (ad4 == 'SBPA') & AD.str.contains('F01', na=False),
+        # PC01: 시리얼 앞4=SBPA + F01 없음
+        slow & (ad4 == 'SBPA') & ~AD.str.contains('F01', na=False),
+        # UC01: 시리얼 앞4=SBUA
+        slow & (ad4 == 'SBUA'),
+        # 스필_7kW: 시리얼 앞4=SVI0
+        slow & (ad4 == 'SVI0'),
+        # 이카플러그: 시리얼 앞3=E0C or 시리얼에 CP 포함
+        slow & ((ad3 == 'E0C') | AD.str.contains('CP', na=False)),
+        # 중앙제어_7kW: 시리얼 앞4=1907/1912
+        slow & (ad4.isin(['1907', '1912'])),
+        # SK_7kW: 시리얼 앞4=SC-P
+        slow & (ad4 == 'SC-P'),
+        # 3kW: 시리얼 앞4=SANA
+        slow & (ad4 == 'SANA'),
+        # PNE_7kW: 시리얼 앞4=EVS-/007S
+        slow & (ad4.isin(['EVS-', '007S'])),
+        # F01: 시리얼 앞4=SBOA + F01 포함
+        slow & (ad4 == 'SBOA') & AD.str.contains('F01', na=False),
+        # PC01: 시리얼 앞4=SBOA + F01 없음
+        slow & (ad4 == 'SBOA') & ~AD.str.contains('F01', na=False),
     ]
     slow_vals = [
-        '알박완속',
-        '10kW',
-        '신형대',
-        '신형대', '신형소',   # ★ EVL-1107 시리얼번호로 구분
-        '구형대',
-        '스필_7kW', '스필_7kW',
-        '이카플러그', '이카플러그',
-        'SK_7kW',
-        '중앙제어_7kW',
-        'PNE_7kW',
-        '완속기타',
+        '알박구형', '알박신형', '10kW',
+        '신형대',   '구형대',
+        '신형대',   '구형대',
+        '신형대',   '신형소',
+        'F01',      'PC01',     'UC01',
+        '스필_7kW', '이카플러그',
+        '중앙제어_7kW', 'SK_7kW', '3kW', 'PNE_7kW',
+        'F01',      'PC01',
     ]
 
     slow_result = pd.Series(
@@ -244,6 +267,7 @@ def classify_model_vectorized(df):
     pending = (result == '__PENDING__')
     result[pending] = slow_result[pending]
     return result
+
 
 
 

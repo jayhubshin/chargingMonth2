@@ -163,6 +163,172 @@ def build_site_groups(df: pd.DataFrame) -> pd.Series:
         normalized = normalized.where(normalized != "", fallback)
     
     return normalized
+# ═══════════════════════════════════════
+# 분류 함수 (process_data.py에 추가)
+# ═══════════════════════════════════════
+
+# 컬럼 후보 목록
+_MODEL_COL_CANDIDATES   = ['충전기모델ID', '모델ID']
+_MODELNM_COL_CANDIDATES = ['충전기모델명', '모델명']
+_TYPE_COL_CANDIDATES    = ['충전기유형', '급속/완속']
+_KW_COL_CANDIDATES      = ['충전용량', '충전기용량']
+
+
+def _pick_series(df, candidates):
+    """후보 컬럼명 중 존재하는 첫 번째 열 반환"""
+    for c in candidates:
+        if c in df.columns:
+            return df[c].fillna('').astype(str).str.strip()
+    return pd.Series('', index=df.index)
+
+
+def classify_model_vectorized(df):
+    AD = _pick_series(df, _MODEL_COL_CANDIDATES)
+    AG = _pick_series(df, _MODELNM_COL_CANDIDATES)
+    AH = _pick_series(df, _TYPE_COL_CANDIDATES)
+    AJ = _pick_series(df, _KW_COL_CANDIDATES)
+
+    ag4  = AG.str[:4]
+    ag3  = AG.str[:3]
+    ag6  = AG.str[:6]
+    ag11 = AG.str[:11]
+    is_fast = (AH == '급속')
+
+    # ── 급속 분류 ──────────────────────────────────────
+    fast_conds = [
+        is_fast & (ag4 == 'S0F1'),
+        is_fast & (ag4 == 'S0F5'),
+        is_fast & (ag4 == 'EVQ-') & (AJ == '100'),
+        is_fast & (ag4.isin(['EVQ-', 'EV1-'])) & (AJ == '50'),
+        is_fast & (ag4 == 'MAXE'),
+        is_fast & (ag4 == 'DP15'),
+        is_fast & (ag4.isin(['A01-', 'AD1-'])),
+        is_fast & (ag4.isin(['Q081', 'Q101', 'Q010'])),
+        is_fast & (ag4.isin(['Q071', 'Q102'])),
+        is_fast & (ag4.isin(['1Y25', '1Y24'])),
+        is_fast & (ag4 == '1911'),
+        is_fast & (ag4 == '1900'),
+        is_fast & (ag4 == '19C0'),
+        is_fast & (ag4 == 'QC50'),
+    ]
+    fast_vals = [
+        '급속스필_100', '급속스필_50',
+        '급속PNE_100',  '급속PNE_50',
+        '급속PNE_200',  '급속PNE_150',
+        '급속애플망고_200',
+        '급속SK_100',   '급속SK_200',
+        '급속코스텔_50',
+        '급속중앙제어_50',
+        '급속그린파워_100', '급속그린파워_50',
+        '급속알박_50',
+    ]
+    result = pd.Series(
+        np.select(fast_conds, fast_vals, default='__PENDING__'),
+        index=df.index
+    )
+    result[(result == '__PENDING__') & is_fast] = '급속기타'
+
+    # ── 완속 분류 ──────────────────────────────────────
+    slow = ~is_fast
+    slow_conds = [
+        slow & (ag4 == 'NC07'),
+        slow & (ag4.isin(['23NA', '22NA', '24NA', '25NA'])),
+        slow & (AD.str.contains('3J10', na=False)),
+        slow & (ag11 == 'EVL-1C-22CQ'),
+        slow & (ag6 == 'EVL-1C') & (ag11 != 'EVL-1C-22CQ'),
+        slow & (ag4 == 'EVL-') & AD.str.contains('1107', na=False) & (ag6 != 'EVL-1C'),
+        slow & (ag4 == 'EVL-') & ~AD.str.contains('1107', na=False) & (ag6 != 'EVL-1C'),
+        slow & (ag4 == 'SBDA'),
+        slow & (ag4 == 'SBAA'),
+        slow & (ag4 == 'SBPA') & AD.str.contains('F01', na=False),
+        slow & (ag4 == 'SBPA') & ~AD.str.contains('F01', na=False),
+        slow & (ag4 == 'SBUA'),
+        slow & (ag4 == 'SVI0'),
+        slow & ((ag3 == 'E0C') | AD.str.contains('CP', na=False)),
+        slow & (ag4.isin(['1907', '1912'])),
+        slow & (ag4 == 'SC-P'),
+        slow & (ag4 == 'SANA'),
+        slow & (ag4.isin(['EVS-', '007S'])),
+        slow & (ag4 == 'SBOA') & AD.str.contains('F01', na=False),
+        slow & (ag4 == 'SBOA') & ~AD.str.contains('F01', na=False),
+    ]
+    slow_vals = [
+        '알박구형', '알박신형', '10kW',
+        '신형대', '구형대',
+        '신형대', '구형대',
+        '신형대', '신형소',
+        'F01', 'PC01', 'UC01',
+        '스필_7kW', '이카플러그',
+        '중앙제어_7kW', 'SK_7kW',
+        '3kW', 'PNE_7kW',
+        'F01', 'PC01',
+    ]
+    slow_result = pd.Series(
+        np.select(slow_conds, slow_vals, default='완속기타'),
+        index=df.index
+    )
+    pending = (result == '__PENDING__')
+    result[pending] = slow_result[pending]
+    return result
+
+
+def classify_region_series(addresses):
+    addr   = addresses.fillna('').astype(str).str.strip()
+    result = pd.Series('기타', index=addr.index)
+
+    incheon        = addr.str.contains('인천', na=False)
+    incheon_detail = addr.str.contains(
+        '계양|남동|동구|미추홀|부평|연수|서구|중구|강화', na=False
+    )
+    result[incheon & incheon_detail]  = '수도권남서'
+    result[incheon & ~incheon_detail] = '인천기타'
+
+    sg = addr.str.contains('서울|경기', na=False) & ~incheon
+    nw = addr.str.contains('고양|부천|김포|파주|은평|마포|서대문|양천|강서|용산|종로|중구', na=False)
+    ne = addr.str.contains('도봉|노원|중랑|강북|성북|동대문|성동|광진|의정부|남양주|구리|양주|포천|동두천|가평|연천', na=False)
+    se = addr.str.contains('강남|서초|송파|강동|성남|용인|하남|광주|안성|수원|평택|오산|이천|여주|양평', na=False)
+    sw = addr.str.contains('구로|금천|영등포|동작|관악|의왕|광명|군포|과천|시흥|안산|안양|화성', na=False)
+
+    result[sg & nw]                    = '수도권북서'
+    result[sg & ne & ~nw]              = '수도권북동'
+    result[sg & se & ~nw & ~ne]        = '수도권남동'
+    result[sg & sw & ~nw & ~ne & ~se]  = '수도권남서'
+    result[sg & ~nw & ~ne & ~se & ~sw] = '수도권기타'
+
+    not_sg = ~incheon & ~sg
+    result[addr.str.contains('강원',                        na=False) & not_sg] = '강원권'
+    result[addr.str.contains('충청|충남|충북|세종|대전',    na=False) & not_sg] = '충청권'
+    result[addr.str.contains('경상|경남|경북|부산|대구|울산', na=False) & not_sg] = '경상권'
+    result[addr.str.contains('전라|전남|전북|광주',         na=False) & not_sg] = '전라권'
+    result[addr.str.contains('제주',                        na=False) & not_sg] = '제주권'
+    return result
+
+
+def build_site_groups(df):
+    addr_col = '주소1' if '주소1' in df.columns else None
+    name_col = next(
+        (c for c in ['충전소명', '사이트명', '설치장소'] if c in df.columns), None
+    )
+    if addr_col:
+        normalized = df[addr_col].fillna('').apply(normalize_addr)
+    elif name_col:
+        normalized = df[name_col].fillna('알수없음')
+    else:
+        normalized = pd.Series('알수없음', index=df.index)
+
+    if name_col:
+        fallback   = df[name_col].fillna('알수없음')
+        normalized = normalized.where(normalized != '', fallback)
+    return normalized
+
+
+def normalize_addr(addr):
+    import re
+    addr = str(addr).strip()
+    addr = re.sub(r'\s*(지하|지상|B|F)?\s*\d+층.*$', '', addr)
+    addr = re.sub(r'\s*\d+동.*$', '', addr)
+    addr = re.sub(r'\s{2,}', ' ', addr)
+    return addr.strip()
 
 # ═══════════════════════════════════════
 # 메인 전처리

@@ -100,7 +100,19 @@ def read_a3_date(path: str) -> str:
         return s
     except Exception as e:
         return "정보없음"
-
+        
+    # ── 날짜 파싱 수정 ──────────────────────────────────
+    def parse_snap_date(s: str):
+        """날짜 문자열 → datetime 변환"""
+        if not s or s == "정보없음":
+            return None
+        match = re.search(r'(\d{4}-\d{2}-\d{2})', str(s))
+        if match:
+            try:
+                return datetime.strptime(match.group(1), "%Y-%m-%d")
+            except:
+                pass
+        return None
 # ═══════════════════════════════════════
 # 권역 분류
 # ═══════════════════════════════════════
@@ -342,7 +354,9 @@ def normalize_addr(addr):
     addr = re.sub(r'\s*\d+동.*$', '', addr)
     addr = re.sub(r'\s{2,}', ' ', addr)
     return addr.strip()
+    
 
+        
 # ═══════════════════════════════════════
 # 메인 전처리
 # ═══════════════════════════════════════
@@ -372,19 +386,6 @@ def process():
 
     diff_days = max(1, (dt_daily - dt_base).days)
     print(f"  기초: {dt_base.date()} | 일일: {dt_daily.date()} | 차이: {diff_days}일")
-
-    # ── 날짜 파싱 수정 ──────────────────────────────────
-    def parse_snap_date(s: str):
-        """날짜 문자열 → datetime 변환"""
-        if not s or s == "정보없음":
-            return None
-        match = re.search(r'(\d{4}-\d{2}-\d{2})', str(s))
-        if match:
-            try:
-                return datetime.strptime(match.group(1), "%Y-%m-%d")
-            except:
-                pass
-        return None
     
     dt_base  = parse_snap_date(base_date)
     dt_daily = parse_snap_date(daily_date)

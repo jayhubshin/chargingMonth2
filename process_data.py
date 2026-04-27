@@ -169,40 +169,37 @@ def build_site_groups(df: pd.DataFrame) -> pd.Series:
 # ═══════════════════════════════════════
 def process():
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] 전처리 시작")
-    
+
     # ── 1) 두 파일 읽기 ───────────────────────────────
     print("  파일 #1 (기초) 읽는 중...")
-    base_date  = read_a3_date(BASE_FILE)
-    df_base    = read_excel_by_index(BASE_FILE, COL_IDX)
-    
+    base_date = read_a3_date(BASE_FILE)
+    df_base   = read_excel_by_index(BASE_FILE, COL_IDX)
+
     print("  파일 #2 (일일) 읽는 중...")
     daily_date = read_a3_date(DAILY_FILE)
-    df_daily   = read_excel_by_index(DAILY_FILE, {
-        "충전기ID":   COL_IDX["충전기ID"],
-        "누적사용량": COL_IDX["누적사용량"],
-    })
-    
+    df_daily   = read_excel_by_index(DAILY_FILE, COL_IDX_DAILY)
+
     # ── 2) 날짜 파싱 ──────────────────────────────────
-    def parse_snap_date(s: str) -> datetime | None:
-        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d", "%Y년 %m월 %d일"]:
+    def parse_snap_date(s):
+        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d"]:
             try:
-                return datetime.strptime(s.split()[0][:10].replace("/","-").replace("년","-").replace("월","-").replace("일","").strip(), "%Y-%m-%d")
+                return datetime.strptime(str(s).strip()[:19], fmt)
             except:
                 continue
         return None
-    
+
     dt_base  = parse_snap_date(base_date)  or datetime(2024, 1, 1)
     dt_daily = parse_snap_date(daily_date) or datetime.now()
     diff_days = max(1, (dt_daily - dt_base).days)
-    
+
     print(f"  기초파일 날짜: {dt_base.date()} | 일일파일 날짜: {dt_daily.date()} | 차이: {diff_days}일")
-    
+
     # ── 3) 누적사용량 숫자 변환 ───────────────────────
-    df_base["누적사용량_base"]  = df_base["누적사용량"].apply(safe_float)
-    df_daily["누적사용량_daily"]= df_daily["누적사용량"].apply(safe_float)
-    df_daily["충전기ID"]        = df_daily["충전기ID"].astype(str).str.strip()
-    df_base["충전기ID"]         = df_base["충전기ID"].astype(str).str.strip()
-    
+    df_base["누적사용량_base"]   = df_base["누적사용량"].apply(safe_float)
+    df_daily["누적사용량_daily"] = df_daily["누적사용량"].apply(safe_float)
+    df_daily["충전기ID"]         = df_daily["충전기ID"].astype(str).str.strip()
+    df_base["충전기ID"]          = df_base["충전기ID"].astype(str).str.strip()
+
     # ── 4) 병합 ───────────────────────────────────────
     df = df_base.copy()
     df = df.merge(
@@ -210,43 +207,57 @@ def process():
         on="충전기ID", how="left"
     )
     df["누적사용량_daily"] = df["누적사용량_daily"].fillna(df["누적사용량_base"])
-    
-    # ── 5) 사용량 계산 ────────────────────────────────
-    # 전체기간 월평균
+
+    # ── 5) 운영개월수 계산 ────────────────────────────
+    # ★ 운영계약 시작일로 계산 (실제 컬럼명: 운영계약시작)
     df["운영계약시작_dt"] = pd.to_datetime(df["운영계약시작"], errors="coerce")
+    df["운영계약종료_dt"] = pd.to_datetime(df["운영계약종료"], errors="coerce")
     now = datetime.now()
+
     df["운영개월수"] = (
         (now - df["운영계약시작_dt"]).dt.days / 30.44
-    ).clip(lower=0.01).fillna(1.0)
-    
-    df["월사용량_전체"] = (
-        df["누적사용량_daily"] / df["운영개월수"]
-    ).round(2)
-    
-    # 최신 1개월 월충전량 (핵심!)
-    # = (daily누적 - base누적) / diff_days * 30
+    ).round(1)
+
+    # ── 6) 사용량 계산 ────────────────────────────────
+    # 전체기간 월평균: 운영 1개월 이상인 경우만 유효
+    valid = df["운영개월수"] >= 1.0
+
+    df["월사용량_전체"] = np.where(
+        valid,
+        (df["누적사용량_daily"] / df["운영개월수"]).round(2),
+        np.nan
+    )
+
+    # 최신 1개월 월충전량
     diff_kwh = (df["누적사용량_daily"] - df["누적사용량_base"]).clip(lower=0)
     df["월사용량_최신"] = (diff_kwh / diff_days * 30).round(2)
-    
-    # 일사용량 (최신 기간)
     df["일사용량_최신"] = (diff_kwh / diff_days).round(3)
-    
-    # ── 6) 권역 보완 ──────────────────────────────────
-    if "권역" in df.columns:
-        missing_region = df["권역"].isna() | (df["권역"] == "") | (df["권역"] == "nan")
-        if missing_region.any():
-            df.loc[missing_region, "권역"] = classify_region_series(
-                df.loc[missing_region, "주소1"]
-            )
-    else:
+
+    # 전체기간 계산 불가 → 최신값으로 대체
+    df["월사용량_전체"] = df["월사용량_전체"].fillna(df["월사용량_최신"])
+    df["운영개월수"]    = df["운영개월수"].fillna(0)
+
+    # ── 7) 모델 분류 ──────────────────────────────────
+    # 실제 컬럼명에 맞게 rename
+    rename_for_classify = {
+        "충전기모델ID": "충전기모델ID",
+        "충전기모델명": "충전기모델명",
+        "급속/완속":    "충전기유형",   # ★ 실제 컬럼명
+        "충전용량":     "충전용량",
+    }
+    df_classify = df.rename(columns=rename_for_classify)
+
+    if "모델분류" not in df.columns or df["모델분류"].isna().all():
+        df["모델분류"] = classify_model_vectorized(df_classify)
+
+    # ── 8) 권역 분류 ──────────────────────────────────
+    if "권역" not in df.columns or df["권역"].isna().all():
         df["권역"] = classify_region_series(df["주소1"])
-    
-    # ── 7) 사이트 자동 그루핑 ─────────────────────────
+
+    # ── 9) 사이트 자동 그루핑 ─────────────────────────
     df["사이트키"] = build_site_groups(df)
-    
-    # ── 8) 계약 상태 ──────────────────────────────────
-    df["운영계약종료_dt"] = pd.to_datetime(df["운영계약종료"], errors="coerce")
-    
+
+    # ── 10) 계약 상태 ─────────────────────────────────
     def contract_status(row):
         if pd.isna(row["운영계약종료_dt"]): return "정보없음"
         r = (row["운영계약종료_dt"] - now).days
@@ -254,10 +265,13 @@ def process():
         if r <= 90:  return "만료임박"
         if r <= 365: return "만료예정"
         return "정상운영"
-    
-    df["계약상태"] = df.apply(contract_status, axis=1)
-    df["잔여일수"] = (df["운영계약종료_dt"] - now).dt.days.fillna(-9999).astype(int)
-    
+
+    df["계약상태_계산"] = df.apply(contract_status, axis=1)
+    df["잔여일수"]      = (df["운영계약종료_dt"] - now).dt.days.fillna(-9999).astype(int)
+
+    # 원본 계약상태 컬럼이 있으면 계산값 우선
+    df["계약상태"] = df["계약상태_계산"]
+
     # ── 9) 사이트별 집계 ──────────────────────────────
     site_agg = (
         df.groupby("사이트키")

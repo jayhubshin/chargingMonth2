@@ -14,6 +14,7 @@ DAILY_FILE = "data/daily.xlsx"
 OUT_FILE   = "data/processed.json"
 HEADER_ROW = 3
 
+# COL_IDX에 시리얼번호 추가
 COL_IDX = {
     "사이트ID":      0,
     "충전소ID":      1,
@@ -26,6 +27,7 @@ COL_IDX = {
     "제조사":       28,
     "충전기모델명": 29,
     "충전기모델ID": 30,
+    "시리얼번호":   32,   # ★ 추가
     "충전기유형":   33,
     "충전용량":     35,
     "경도":         38,
@@ -35,6 +37,7 @@ COL_IDX = {
     "운영계약종료": 44,
     "사용여부":     45,
 }
+
 
 COL_IDX_DAILY = {
     "충전기ID":    2,
@@ -145,36 +148,31 @@ def _pick_series(df, candidates):
 
 
 def classify_model_vectorized(df):
-    AD = _pick_series(df, _MODEL_COL_CANDIDATES)    # 모델ID (숫자)
-    AG = _pick_series(df, _MODELNM_COL_CANDIDATES)  # 모델명 (문자)
-    AH = _pick_series(df, _TYPE_COL_CANDIDATES)     # 급속/완속
-    AJ = _pick_series(df, _KW_COL_CANDIDATES)       # 용량
+    AG = _pick_series(df, _MODELNM_COL_CANDIDATES)   # 모델명
+    AH = _pick_series(df, _TYPE_COL_CANDIDATES)       # 급속/완속
+    AJ = _pick_series(df, _KW_COL_CANDIDATES)         # 용량
+
+    # ★ 시리얼번호 읽기
+    SN = _pick_series(df, ['시리얼번호'])
 
     is_fast = (AH == '급속')
+    slow    = ~is_fast
 
-    # ── 급속 분류 (실제 모델명 기준) ───────────────────────
+    # ── 급속 분류 ─────────────────────────────────────
     fast_conds = [
-        # 스필 급속
         is_fast & AG.str.startswith('S0F1'),
         is_fast & AG.str.startswith('S0F5'),
-        # PNE 급속
         is_fast & AG.str.startswith('EVQ-') & (AJ == '100'),
         is_fast & AG.str.startswith('EVQ-') & (AJ == '50'),
-        is_fast & AG.str.startswith('MAXE'),          # MAXERO-200QC
-        is_fast & AG.str.startswith('DP15'),          # DP150C2-2C
-        # 애플망고
-        is_fast & AG.str.startswith('AM-F'),          # AM-FCD-200-02
-        # SK 급속
-        is_fast & AG.str.startswith('FC10'),          # FC100K-B2
-        is_fast & AG.str.startswith('FC20'),          # FC200K-B2
-        # 코스텔
-        is_fast & AG.str.startswith('SFC-'),          # SFC-S050S, SFC-D101D
-        # 스필 SVI
-        is_fast & AG.str.startswith('SVI-'),          # SVI-0F
-        # 중앙제어
-        is_fast & AG.str.startswith('JC-69'),         # JC-6933-TM
-        # 알박
-        is_fast & AG.str.startswith('UK-Q'),          # UK-QC50ST
+        is_fast & AG.str.startswith('MAXE'),
+        is_fast & AG.str.startswith('DP15'),
+        is_fast & AG.str.startswith('AM-F'),
+        is_fast & AG.str.startswith('FC10'),
+        is_fast & AG.str.startswith('FC20'),
+        is_fast & AG.str.startswith('SFC-'),
+        is_fast & AG.str.startswith('SVI-'),
+        is_fast & AG.str.startswith('JC-69'),
+        is_fast & AG.str.startswith('UK-Q'),
     ]
     fast_vals = [
         '급속스필_100', '급속스필_50',
@@ -194,35 +192,38 @@ def classify_model_vectorized(df):
     )
     result[(result == '__PENDING__') & is_fast] = '급속기타'
 
-    # ── 완속 분류 (실제 모델명 기준) ───────────────────────
-    slow = ~is_fast
+    # ── 완속 분류 ─────────────────────────────────────
     slow_conds = [
         # 알박 완속
-        slow & AG.str.startswith('UK-N'),             # UK-NC7W 시리즈
+        slow & AG.str.startswith('UK-N'),
         # PNE 완속 EVL 시리즈
-        slow & AG.str.contains('3J10', na=False),     # EVL-3J1002 → 10kW
-        slow & AG.str.startswith('EVL-1C'),           # EVL-1C07027A01 → 신형대
-        slow & AG.str.startswith('EVL-1107'),         # EVL-1107020x01 → 신형대
-        slow & AG.str.startswith('EVL-'),             # EVL-1103 등 나머지 → 구형대
+        slow & AG.str.contains('3J10', na=False),          # 10kW
+        slow & AG.str.startswith('EVL-1C'),                # 신형대
+        # ★ EVL-1107: 시리얼번호 SBDAC → 신형대, 나머지 → 신형소
+        slow & AG.str.startswith('EVL-1107') & SN.str.startswith('SBDAC'),
+        slow & AG.str.startswith('EVL-1107') & ~SN.str.startswith('SBDAC'),
+        slow & AG.str.startswith('EVL-'),                  # 구형대 (나머지)
         # 스필 완속
-        slow & AG.str.startswith('S0L'),              # S0L0701, S0L1401
-        slow & AG.str.startswith('S0W'),              # S0W0701
+        slow & AG.str.startswith('S0L'),
+        slow & AG.str.startswith('S0W'),
         # 이카플러그
-        slow & AG.str.startswith('CPT'),              # CPT11C1, CPT22C2
-        slow & AG.str.startswith('CPW'),              # CPW102
+        slow & AG.str.startswith('CPT'),
+        slow & AG.str.startswith('CPW'),
         # SK 완속
-        slow & AG.str.startswith('SC7K'),             # SC7K-F-WT-G2
+        slow & AG.str.startswith('SC7K'),
         # 중앙제어 완속
-        slow & AG.str.startswith('JC-6'),             # JC-6111, JC-6511
+        slow & AG.str.startswith('JC-6'),
         # PNE 완속 EVS
-        slow & AG.str.startswith('EVS'),              # EVS_21S_L
+        slow & AG.str.startswith('EVS'),
         # MAXERO 완속
-        slow & AG.str.startswith('MAXE'),             # MAXERO-007SC
+        slow & AG.str.startswith('MAXE'),
     ]
     slow_vals = [
         '알박완속',
         '10kW',
-        '신형대', '신형대', '구형대',
+        '신형대',
+        '신형대', '신형소',   # ★ EVL-1107 시리얼번호로 구분
+        '구형대',
         '스필_7kW', '스필_7kW',
         '이카플러그', '이카플러그',
         'SK_7kW',
@@ -238,6 +239,7 @@ def classify_model_vectorized(df):
     pending = (result == '__PENDING__')
     result[pending] = slow_result[pending]
     return result
+
 
 
 def classify_region_series(addresses):

@@ -351,12 +351,27 @@ def process():
 
     # ── 1) 두 파일 읽기 ───────────────────────────────
     print("  파일 #1 (기초) 읽는 중...")
-    base_date = read_a3_date(BASE_FILE)
-    df_base   = read_excel_by_index(BASE_FILE, COL_IDX)
+    base_date  = read_a3_date(BASE_FILE)   # "2026-03-16"
+    df_base    = read_excel_by_index(BASE_FILE, COL_IDX)
 
     print("  파일 #2 (일일) 읽는 중...")
-    daily_date = read_a3_date(DAILY_FILE)
+    daily_date = read_a3_date(DAILY_FILE)  # "2026-04-28"
     df_daily   = read_excel_by_index(DAILY_FILE, COL_IDX_DAILY)
+
+    # ── 2) 날짜 파싱 ──────────────────────────────────
+    dt_base  = parse_snap_date(base_date)
+    dt_daily = parse_snap_date(daily_date)
+
+    print(f"  base_date 원본: '{base_date}' → {dt_base}")
+    print(f"  daily_date 원본: '{daily_date}' → {dt_daily}")
+
+    if dt_base is None:
+        raise ValueError(f"기초파일 날짜 읽기 실패: '{base_date}'")
+    if dt_daily is None:
+        raise ValueError(f"일일파일 날짜 읽기 실패: '{daily_date}'")
+
+    diff_days = max(1, (dt_daily - dt_base).days)
+    print(f"  기초: {dt_base.date()} | 일일: {dt_daily.date()} | 차이: {diff_days}일")
 
     # ── 날짜 파싱 수정 ──────────────────────────────────
     def parse_snap_date(s: str):

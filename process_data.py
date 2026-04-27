@@ -44,10 +44,13 @@ COL_IDX_DAILY = {
     "누적사용량": 18,
 }
 
+# 전역 변수 수정
 _MODEL_COL_CANDIDATES   = ['충전기모델ID', '모델ID']
 _MODELNM_COL_CANDIDATES = ['충전기모델명', '모델명']
 _TYPE_COL_CANDIDATES    = ['충전기유형', '급속/완속']
 _KW_COL_CANDIDATES      = ['충전용량', '충전기용량']
+_SN_COL_CANDIDATES      = ['시리얼번호']   # ★ 추가
+
 
 REGION_ORDER = [
     '수도권북동','수도권북서','수도권남동','수도권남서',

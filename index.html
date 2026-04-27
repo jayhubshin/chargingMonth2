@@ -189,7 +189,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <span style="font-size:.88rem;font-weight:700;">⚡ 사용량 기준:</span>
       <span id="lbl-full" style="color:var(--blue);font-weight:700;font-size:.85rem;">전체기간 월평균</span>
       <label class="toggle-switch">
-        <input type="checkbox" id="usage-toggle" onchange="onUsageToggle()">
+        <input type="checkbox" id="usage-toggle" onchange="onUsageToggle()" checked>
         <span class="toggle-slider"></span>
       </label>
       <span id="lbl-recent" style="color:var(--text2);font-size:.85rem;">최신 1개월</span>
@@ -341,7 +341,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 // ═══════════════════════════════════════
 let G = {
   data: null,
-  useRecent: false,
+  useRecent: true,
   charger: { filtered:[], page:1, perPage:50, sortCol:'월사용량_전체', sortDir:-1 },
   site:    { filtered:[], page:1, perPage:12 },
   charts:  {},
@@ -486,6 +486,34 @@ function contractBadge(v) {
   return v?`<span class="badge ${map[v]||"badge-gray"}">${emoji[v]||""}${v}</span>`:"-";
 }
 
+function copySiteUsage(value) {
+  const text = `${Math.round(value).toLocaleString('ko-KR')}kWh`;
+  navigator.clipboard.writeText(text).then(() => {
+    // 버튼 텍스트 일시 변경
+    const btns = document.querySelectorAll('#site-table-wrap button');
+    btns.forEach(btn => {
+      if (btn.textContent.includes('복사')) {
+        const original = btn.innerHTML;
+        btn.innerHTML  = '✅ 복사완료!';
+        btn.style.background = '#c8e6c9';
+        setTimeout(() => {
+          btn.innerHTML        = original;
+          btn.style.background = '#e8f5e9';
+        }, 1500);
+      }
+    });
+  }).catch(() => {
+    // clipboard API 실패 시 fallback
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    alert(`복사됨: ${text}`);
+  });
+}
+
 // ═══════════════════════════════════════
 // 사이트별 탭 전체 렌더링
 // ═══════════════════════════════════════
@@ -518,11 +546,24 @@ function renderSitePage() {
       <td>${contractBadge(s.계약상태)}</td>
     </tr>`).join("");
 
+  const totalRecent = page.reduce((s, r) => s + (r.월사용량_최신합 || 0), 0);
+  const copyText    = `${Math.round(totalRecent).toLocaleString('ko-KR')}kWh`;
+  
   document.getElementById("site-table-wrap").innerHTML = `
     <div class="table-wrap">
       <div class="table-header">
         <h3>🏢 사이트별 현황 [${lbl}]</h3>
         <div style="display:flex;gap:8px;">
+          <!-- ★ 복사 버튼 -->
+          <button onclick="copySiteUsage(${Math.round(totalRecent)})"
+            style="padding:6px 12px;border:none;border-radius:8px;
+              background:#e8f5e9;color:#2e7d32;font-size:.82rem;
+              font-weight:700;cursor:pointer;display:flex;
+              align-items:center;gap:4px;"
+            title="최신 1개월 월충전량 복사">
+            📋 ${copyText} 복사
+          </button>
+          
           <button class="btn btn-secondary" onclick="downloadCSV('site')"
             style="font-size:.8rem;">💾 CSV</button>
           <span class="badge badge-blue">${fmt(total)}개 사이트</span>

@@ -14,7 +14,6 @@ import os
 BASE_FILE  = "data/base.xlsx"
 DAILY_FILE = "data/daily.xlsx"
 OUT_FILE   = "data/processed.json"
-
 HEADER_ROW = 3  # 4행 헤더 (0-based)
 
 # ═══════════════════════════════════════
@@ -50,6 +49,15 @@ COL_IDX_DAILY = {
     "누적사용량":   18,    # S
 }
 
+_MODEL_COL_CANDIDATES   = ['충전기모델ID', '모델ID']
+_MODELNM_COL_CANDIDATES = ['충전기모델명', '모델명']
+_TYPE_COL_CANDIDATES    = ['충전기유형', '급속/완속']
+_KW_COL_CANDIDATES      = ['충전용량', '충전기용량']
+
+REGION_ORDER = [
+    '수도권북동','수도권북서','수도권남동','수도권남서',
+    '수도권기타','인천기타','강원권','충청권','전라권','경상권','제주권','기타'
+]
 
 # ═══════════════════════════════════════
 # 유틸
@@ -59,28 +67,7 @@ def safe_float(v):
         return float(str(v).replace(",", "").strip())
     except:
         return 0.0
-
-def read_excel_by_index(path: str, col_map: dict) -> pd.DataFrame:
-    """헤더=4행, 인덱스 기반으로 필요한 열만 읽기"""
-    df_raw = pd.read_excel(path, header=HEADER_ROW, dtype=str, engine="openpyxl")
-    df_raw.columns = [str(c).strip() for c in df_raw.columns]
-    df_raw = df_raw.dropna(how="all").reset_index(drop=True)
-    
-    all_cols = list(df_raw.columns)
-    result   = pd.DataFrame(index=df_raw.index)
-    
-    for alias, idx in col_map.items():
-        # 1순위: alias명으로 직접 탐색
-        if alias in df_raw.columns:
-            result[alias] = df_raw[alias]
-        # 2순위: 인덱스로 탐색
-        elif idx < len(all_cols):
-            result[alias] = df_raw.iloc[:, idx]
-        else:
-            result[alias] = ""
-    
-    return result
-
+        
 def read_a3_date(path: str) -> str:
     """A3 셀에서 날짜 문자열 추출"""
     try:
@@ -100,7 +87,6 @@ def read_a3_date(path: str) -> str:
         return s
     except Exception as e:
         return "정보없음"
-        
     # ── 날짜 파싱 수정 ──────────────────────────────────
     def parse_snap_date(s: str):
         """날짜 문자열 → datetime 변환"""
@@ -113,6 +99,30 @@ def read_a3_date(path: str) -> str:
             except:
                 pass
         return None
+        
+def read_excel_by_index(path: str, col_map: dict) -> pd.DataFrame:
+    """헤더=4행, 인덱스 기반으로 필요한 열만 읽기"""
+    df_raw = pd.read_excel(path, header=HEADER_ROW, dtype=str, engine="openpyxl")
+    df_raw.columns = [str(c).strip() for c in df_raw.columns]
+    df_raw = df_raw.dropna(how="all").reset_index(drop=True)
+    
+    all_cols = list(df_raw.columns)
+    result   = pd.DataFrame(index=df_raw.index)
+    
+    for alias, idx in col_map.items():
+        # 1순위: alias명으로 직접 탐색
+        if alias in df_raw.columns:
+            result[alias] = df_raw[alias]
+        # 2순위: 인덱스로 탐색
+        elif idx < len(all_cols):
+            result[alias] = df_raw.iloc[:, idx]
+        else:
+            result[alias] = ""
+    return result
+
+
+        
+
 # ═══════════════════════════════════════
 # 권역 분류
 # ═══════════════════════════════════════
@@ -158,6 +168,7 @@ def normalize_addr(addr: str) -> str:
     addr = re.sub(r"\s{2,}", " ",  addr)
     return addr.strip()
 
+
 def build_site_groups(df: pd.DataFrame) -> pd.Series:
     """
     주소1(H열) 기준으로 사이트 그루핑.
@@ -200,14 +211,14 @@ def _pick_series(df, candidates):
 
 
 def classify_model_vectorized(df):
-    AD = _pick_series(df, _MODEL_COL_CANDIDATES)   # 모델ID
-    AG = _pick_series(df, _MODELNM_COL_CANDIDATES) # 모델명
-    AH = _pick_series(df, _TYPE_COL_CANDIDATES)    # 급속/완속
-    AJ = _pick_series(df, _KW_COL_CANDIDATES)      # 용량
+    AD = _pick_series(df, _MODEL_COL_CANDIDATES)    # 모델ID (숫자)
+    AG = _pick_series(df, _MODELNM_COL_CANDIDATES)  # 모델명 (문자)
+    AH = _pick_series(df, _TYPE_COL_CANDIDATES)     # 급속/완속
+    AJ = _pick_series(df, _KW_COL_CANDIDATES)       # 용량
 
     is_fast = (AH == '급속')
 
-    # ── 급속 분류 ──────────────────────────────────────────
+    # ── 급속 분류 (실제 모델명 기준) ───────────────────────
     fast_conds = [
         # 스필 급속
         is_fast & AG.str.startswith('S0F1'),
@@ -215,21 +226,21 @@ def classify_model_vectorized(df):
         # PNE 급속
         is_fast & AG.str.startswith('EVQ-') & (AJ == '100'),
         is_fast & AG.str.startswith('EVQ-') & (AJ == '50'),
-        is_fast & AG.str.startswith('MAXERO-200'),
-        is_fast & AG.str.startswith('DP150'),
-        # 애플망고(그린카) 급속
-        is_fast & AG.str.startswith('AM-FCD'),
+        is_fast & AG.str.startswith('MAXE'),          # MAXERO-200QC
+        is_fast & AG.str.startswith('DP15'),          # DP150C2-2C
+        # 애플망고
+        is_fast & AG.str.startswith('AM-F'),          # AM-FCD-200-02
         # SK 급속
-        is_fast & AG.str.startswith('FC100'),
-        is_fast & AG.str.startswith('FC200'),
-        # 코스텔 급속
-        is_fast & AG.str.startswith('SFC-S050'),
+        is_fast & AG.str.startswith('FC10'),          # FC100K-B2
+        is_fast & AG.str.startswith('FC20'),          # FC200K-B2
+        # 코스텔
+        is_fast & AG.str.startswith('SFC-'),          # SFC-S050S, SFC-D101D
         # 스필 SVI
-        is_fast & AG.str.startswith('SVI-0F'),
-        # 중앙제어 급속
-        is_fast & AG.str.startswith('JC-6933'),
-        # 알박 급속
-        is_fast & AG.str.startswith('UK-QC50'),
+        is_fast & AG.str.startswith('SVI-'),          # SVI-0F
+        # 중앙제어
+        is_fast & AG.str.startswith('JC-69'),         # JC-6933-TM
+        # 알박
+        is_fast & AG.str.startswith('UK-Q'),          # UK-QC50ST
     ]
     fast_vals = [
         '급속스필_100', '급속스필_50',
@@ -237,7 +248,7 @@ def classify_model_vectorized(df):
         '급속PNE_200',  '급속PNE_150',
         '급속애플망고_200',
         '급속SK_100',   '급속SK_200',
-        '급속코스텔_50',
+        '급속코스텔',
         '급속스필_SVI',
         '급속중앙제어_50',
         '급속알박_50',
@@ -249,40 +260,39 @@ def classify_model_vectorized(df):
     )
     result[(result == '__PENDING__') & is_fast] = '급속기타'
 
-    # ── 완속 분류 ──────────────────────────────────────────
+    # ── 완속 분류 (실제 모델명 기준) ───────────────────────
     slow = ~is_fast
     slow_conds = [
-        # 알박 완속 (UK-NC7 시리즈 전체)
-        slow & AG.str.startswith('UK-NC7'),
-        # PNE 완속 (EVL 시리즈)
-        slow & AG.str.startswith('EVL-3J10'),          # 10kW
-        slow & (AG == 'EVL-1C07027A01'),               # 신형대 (1C)
-        slow & AG.str.startswith('EVL-1107'),          # 신형대 (1107)
-        slow & AG.str.startswith('EVL-'),              # 구형대 (나머지 EVL)
+        # 알박 완속
+        slow & AG.str.startswith('UK-N'),             # UK-NC7W 시리즈
+        # PNE 완속 EVL 시리즈
+        slow & AG.str.contains('3J10', na=False),     # EVL-3J1002 → 10kW
+        slow & AG.str.startswith('EVL-1C'),           # EVL-1C07027A01 → 신형대
+        slow & AG.str.startswith('EVL-1107'),         # EVL-1107020x01 → 신형대
+        slow & AG.str.startswith('EVL-'),             # EVL-1103 등 나머지 → 구형대
         # 스필 완속
-        slow & AG.str.startswith('S0L'),               # 스필_7kW (S0L)
-        slow & AG.str.startswith('S0W'),               # 스필_7kW (S0W)
+        slow & AG.str.startswith('S0L'),              # S0L0701, S0L1401
+        slow & AG.str.startswith('S0W'),              # S0W0701
         # 이카플러그
-        slow & AG.str.startswith('CPT'),
-        slow & AG.str.startswith('CPW'),
+        slow & AG.str.startswith('CPT'),              # CPT11C1, CPT22C2
+        slow & AG.str.startswith('CPW'),              # CPW102
         # SK 완속
-        slow & AG.str.startswith('SC7K'),
+        slow & AG.str.startswith('SC7K'),             # SC7K-F-WT-G2
         # 중앙제어 완속
-        slow & AG.str.startswith('JC-6111'),
-        slow & AG.str.startswith('JC-6511'),
+        slow & AG.str.startswith('JC-6'),             # JC-6111, JC-6511
         # PNE 완속 EVS
-        slow & AG.str.startswith('EVS'),
+        slow & AG.str.startswith('EVS'),              # EVS_21S_L
         # MAXERO 완속
-        slow & AG.str.startswith('MAXERO-007'),
+        slow & AG.str.startswith('MAXE'),             # MAXERO-007SC
     ]
     slow_vals = [
         '알박완속',
         '10kW',
-        '신형대',  '신형대',  '구형대',
+        '신형대', '신형대', '구형대',
         '스필_7kW', '스필_7kW',
         '이카플러그', '이카플러그',
         'SK_7kW',
-        '중앙제어_7kW', '중앙제어_7kW',
+        '중앙제어_7kW',
         'PNE_7kW',
         '완속기타',
     ]
@@ -294,6 +304,7 @@ def classify_model_vectorized(df):
     pending = (result == '__PENDING__')
     result[pending] = slow_result[pending]
     return result
+
 
 
 
@@ -345,16 +356,6 @@ def build_site_groups(df):
         fallback   = df[name_col].fillna('알수없음')
         normalized = normalized.where(normalized != '', fallback)
     return normalized
-
-
-def normalize_addr(addr):
-    import re
-    addr = str(addr).strip()
-    addr = re.sub(r'\s*(지하|지상|B|F)?\s*\d+층.*$', '', addr)
-    addr = re.sub(r'\s*\d+동.*$', '', addr)
-    addr = re.sub(r'\s{2,}', ' ', addr)
-    return addr.strip()
-    
 
         
 # ═══════════════════════════════════════

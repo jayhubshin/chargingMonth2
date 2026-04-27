@@ -354,6 +354,8 @@ const REGION_ORDER = [
 
 const fmt  = (v,d=0) => v==null?"-":Number(v).toLocaleString("ko-KR",{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtK = v => v==null?"-":(v>=1000?fmt(v,0):fmt(v,1));
+// 날짜 포맷 함수 추가 (기존 fmt, fmtK 함수 근처에 추가)
+const fmtDate = v => v ? String(v).replace(' 00:00:00', '').replace('T00:00:00', '').substring(0, 10) : "-";
 
 // ═══════════════════════════════════════
 // 데이터 로드
@@ -646,16 +648,17 @@ function renderSitePage() {
         <span>🔌 <b>${fmt(s.충전기수)}대</b></span>
         <span>⚡ <b>${fmtK(s[uk])} kWh/월</b></span>
         <span style="color:${borderColor};font-weight:700;">⏳ ${remText}</span>
+      </div><div style="font-size:.76rem;color:var(--text2);margin-bottom:8px;">
+        📅 ${fmtDate(s.운영계약시작)} ~ ${fmtDate(s.운영계약종료)}
       </div>
-      <div style="font-size:.78rem;color:var(--text2);margin-bottom:8px;">
-        📅 ${s.운영계약시작 || "-"} ~ ${s.운영계약종료 || "-"}
+      <div style="background:#f1f5f9;border-radius:6px;height:7px;overflow:hidden;">
+        <div style="background:${borderColor};height:100%;width:${progress}%;
+          border-radius:6px;"></div>
       </div>
-      <div style="background:#f1f5f9;border-radius:6px;height:8px;overflow:hidden;">
-        <div style="background:${borderColor};height:100%;
-          width:${progress}%;transition:width .3s;border-radius:6px;"></div>
-      </div>
-      <div style="font-size:.72rem;color:var(--text2);margin-top:4px;text-align:right;">
-        계약 진행률 ${progress}%
+      <div style="display:flex;justify-content:space-between;
+        font-size:.7rem;color:var(--text2);margin-top:3px;">
+        <span>⏳ ${remText}</span>
+        <span>계약 진행률 ${progress}%</span>
       </div>
     </div>`;
   }).join("");

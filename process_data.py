@@ -183,33 +183,36 @@ def _pick_series(df, candidates):
 
 
 def classify_model_vectorized(df):
-    AD = _pick_series(df, _MODEL_COL_CANDIDATES)
-    AG = _pick_series(df, _MODELNM_COL_CANDIDATES)
-    AH = _pick_series(df, _TYPE_COL_CANDIDATES)
-    AJ = _pick_series(df, _KW_COL_CANDIDATES)
+    AD = _pick_series(df, _MODEL_COL_CANDIDATES)   # 모델ID
+    AG = _pick_series(df, _MODELNM_COL_CANDIDATES) # 모델명
+    AH = _pick_series(df, _TYPE_COL_CANDIDATES)    # 급속/완속
+    AJ = _pick_series(df, _KW_COL_CANDIDATES)      # 용량
 
-    ag4  = AG.str[:4]
-    ag3  = AG.str[:3]
-    ag6  = AG.str[:6]
-    ag11 = AG.str[:11]
     is_fast = (AH == '급속')
 
-    # ── 급속 분류 ──────────────────────────────────────
+    # ── 급속 분류 ──────────────────────────────────────────
     fast_conds = [
-        is_fast & (ag4 == 'S0F1'),
-        is_fast & (ag4 == 'S0F5'),
-        is_fast & (ag4 == 'EVQ-') & (AJ == '100'),
-        is_fast & (ag4.isin(['EVQ-', 'EV1-'])) & (AJ == '50'),
-        is_fast & (ag4 == 'MAXE'),
-        is_fast & (ag4 == 'DP15'),
-        is_fast & (ag4.isin(['A01-', 'AD1-'])),
-        is_fast & (ag4.isin(['Q081', 'Q101', 'Q010'])),
-        is_fast & (ag4.isin(['Q071', 'Q102'])),
-        is_fast & (ag4.isin(['1Y25', '1Y24'])),
-        is_fast & (ag4 == '1911'),
-        is_fast & (ag4 == '1900'),
-        is_fast & (ag4 == '19C0'),
-        is_fast & (ag4 == 'QC50'),
+        # 스필 급속
+        is_fast & AG.str.startswith('S0F1'),
+        is_fast & AG.str.startswith('S0F5'),
+        # PNE 급속
+        is_fast & AG.str.startswith('EVQ-') & (AJ == '100'),
+        is_fast & AG.str.startswith('EVQ-') & (AJ == '50'),
+        is_fast & AG.str.startswith('MAXERO-200'),
+        is_fast & AG.str.startswith('DP150'),
+        # 애플망고(그린카) 급속
+        is_fast & AG.str.startswith('AM-FCD'),
+        # SK 급속
+        is_fast & AG.str.startswith('FC100'),
+        is_fast & AG.str.startswith('FC200'),
+        # 코스텔 급속
+        is_fast & AG.str.startswith('SFC-S050'),
+        # 스필 SVI
+        is_fast & AG.str.startswith('SVI-0F'),
+        # 중앙제어 급속
+        is_fast & AG.str.startswith('JC-6933'),
+        # 알박 급속
+        is_fast & AG.str.startswith('UK-QC50'),
     ]
     fast_vals = [
         '급속스필_100', '급속스필_50',
@@ -218,51 +221,55 @@ def classify_model_vectorized(df):
         '급속애플망고_200',
         '급속SK_100',   '급속SK_200',
         '급속코스텔_50',
+        '급속스필_SVI',
         '급속중앙제어_50',
-        '급속그린파워_100', '급속그린파워_50',
         '급속알박_50',
     ]
+
     result = pd.Series(
         np.select(fast_conds, fast_vals, default='__PENDING__'),
         index=df.index
     )
     result[(result == '__PENDING__') & is_fast] = '급속기타'
 
-    # ── 완속 분류 ──────────────────────────────────────
+    # ── 완속 분류 ──────────────────────────────────────────
     slow = ~is_fast
     slow_conds = [
-        slow & (ag4 == 'NC07'),
-        slow & (ag4.isin(['23NA', '22NA', '24NA', '25NA'])),
-        slow & (AD.str.contains('3J10', na=False)),
-        slow & (ag11 == 'EVL-1C-22CQ'),
-        slow & (ag6 == 'EVL-1C') & (ag11 != 'EVL-1C-22CQ'),
-        slow & (ag4 == 'EVL-') & AD.str.contains('1107', na=False) & (ag6 != 'EVL-1C'),
-        slow & (ag4 == 'EVL-') & ~AD.str.contains('1107', na=False) & (ag6 != 'EVL-1C'),
-        slow & (ag4 == 'SBDA'),
-        slow & (ag4 == 'SBAA'),
-        slow & (ag4 == 'SBPA') & AD.str.contains('F01', na=False),
-        slow & (ag4 == 'SBPA') & ~AD.str.contains('F01', na=False),
-        slow & (ag4 == 'SBUA'),
-        slow & (ag4 == 'SVI0'),
-        slow & ((ag3 == 'E0C') | AD.str.contains('CP', na=False)),
-        slow & (ag4.isin(['1907', '1912'])),
-        slow & (ag4 == 'SC-P'),
-        slow & (ag4 == 'SANA'),
-        slow & (ag4.isin(['EVS-', '007S'])),
-        slow & (ag4 == 'SBOA') & AD.str.contains('F01', na=False),
-        slow & (ag4 == 'SBOA') & ~AD.str.contains('F01', na=False),
+        # 알박 완속 (UK-NC7 시리즈 전체)
+        slow & AG.str.startswith('UK-NC7'),
+        # PNE 완속 (EVL 시리즈)
+        slow & AG.str.startswith('EVL-3J10'),          # 10kW
+        slow & (AG == 'EVL-1C07027A01'),               # 신형대 (1C)
+        slow & AG.str.startswith('EVL-1107'),          # 신형대 (1107)
+        slow & AG.str.startswith('EVL-'),              # 구형대 (나머지 EVL)
+        # 스필 완속
+        slow & AG.str.startswith('S0L'),               # 스필_7kW (S0L)
+        slow & AG.str.startswith('S0W'),               # 스필_7kW (S0W)
+        # 이카플러그
+        slow & AG.str.startswith('CPT'),
+        slow & AG.str.startswith('CPW'),
+        # SK 완속
+        slow & AG.str.startswith('SC7K'),
+        # 중앙제어 완속
+        slow & AG.str.startswith('JC-6111'),
+        slow & AG.str.startswith('JC-6511'),
+        # PNE 완속 EVS
+        slow & AG.str.startswith('EVS'),
+        # MAXERO 완속
+        slow & AG.str.startswith('MAXERO-007'),
     ]
     slow_vals = [
-        '알박구형', '알박신형', '10kW',
-        '신형대', '구형대',
-        '신형대', '구형대',
-        '신형대', '신형소',
-        'F01', 'PC01', 'UC01',
-        '스필_7kW', '이카플러그',
-        '중앙제어_7kW', 'SK_7kW',
-        '3kW', 'PNE_7kW',
-        'F01', 'PC01',
+        '알박완속',
+        '10kW',
+        '신형대',  '신형대',  '구형대',
+        '스필_7kW', '스필_7kW',
+        '이카플러그', '이카플러그',
+        'SK_7kW',
+        '중앙제어_7kW', '중앙제어_7kW',
+        'PNE_7kW',
+        '완속기타',
     ]
+
     slow_result = pd.Series(
         np.select(slow_conds, slow_vals, default='완속기타'),
         index=df.index
@@ -270,6 +277,7 @@ def classify_model_vectorized(df):
     pending = (result == '__PENDING__')
     result[pending] = slow_result[pending]
     return result
+
 
 
 def classify_region_series(addresses):

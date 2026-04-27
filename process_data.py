@@ -39,6 +39,8 @@ COL_IDX = {
 }
 
 
+
+
 COL_IDX_DAILY = {
     "충전기ID":    2,
     "누적사용량": 18,
@@ -416,12 +418,14 @@ def process():
         "충전기ID", "충전소명", "상세주소", "주소1",
         "충전기상태", "운영계약시작", "운영계약종료",
         "충전기모델명", "충전기유형", "충전용량",
+        "시리얼번호",   # ★ 추가
         "위도", "경도", "모델분류", "권역", "사이트키",
         "계약상태", "잔여일수",
         "누적사용량_base", "누적사용량_daily",
         "월사용량_전체", "월사용량_최신", "일사용량_최신",
         "운영개월수",
     ]
+
     avail_cols = [c for c in keep_cols if c in df.columns]
     df_out = df[avail_cols].copy()
     df_out = df_out.where(pd.notnull(df_out), None)

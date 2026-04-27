@@ -233,9 +233,11 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
     <!-- 사이트별 탭 -->
     <div id="tab-site" class="tab-panel">
+    
+      <!-- 검색바 -->
       <div class="search-bar">
-        <input type="text" id="site-search" placeholder="사이트명 또는 주소 검색..."
-          oninput="onSiteSearch()">
+        <input type="text" id="site-search"
+          placeholder="사이트명 또는 주소 검색..." oninput="onSiteSearch()">
         <select id="site-region-filter" onchange="onSiteSearch()"
           style="min-width:120px;">
           <option value="">전체 권역</option>
@@ -250,14 +252,22 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <option value="정보없음">⚪ 정보없음</option>
         </select>
         <button class="btn btn-secondary" onclick="clearSiteFilter()">✕ 초기화</button>
-        <button class="btn btn-secondary" onclick="downloadCSV('site')"
-          style="font-size:.8rem;">💾 CSV</button>
       </div>
-      <div id="site-count-info" style="font-size:.85rem;color:var(--text2);
-        margin-bottom:12px;"></div>
-      <div class="site-grid" id="site-grid"></div>
-      <div class="pagination" id="site-pagination"></div>
+    
+      <div id="site-count-info"
+        style="font-size:.85rem;color:var(--text2);margin-bottom:10px;"></div>
+    
+      <!-- ① 사이트별 집계 테이블 -->
+      <div id="site-table-wrap"></div>
+    
+      <!-- ② 충전기별 목록 -->
+      <div id="site-charger-wrap" style="margin-top:20px;"></div>
+    
+      <!-- ③ 계약 현황 카드 -->
+      <div id="site-contract-wrap" style="margin-top:20px;"></div>
+    
     </div>
+
 
     <!-- 충전기별 탭 -->
     <div id="tab-charger" class="tab-panel">
@@ -379,7 +389,7 @@ function initDashboard() {
 
   G.charger.filtered = [...G.data.chargers];
   G.site.filtered    = [...G.data.sites];
-  renderSiteGrid();
+  renderSitePage();
   renderChargerTable();
   renderModelTable();
   renderRegionTable();
@@ -396,7 +406,7 @@ function onUsageToggle() {
   document.getElementById("lbl-recent").style.fontWeight = G.useRecent?"700":"400";
   updateToggleDesc();
   renderKPI(); renderCharts(); buildHeatmap();
-  renderSiteGrid(); renderChargerTable();
+  renderSitePage(); renderChargerTable();
   renderModelTable(); renderRegionTable();
 }
 function updateToggleDesc() {
@@ -474,103 +484,223 @@ function contractBadge(v) {
   return v?`<span class="badge ${map[v]||"badge-gray"}">${emoji[v]||""}${v}</span>`:"-";
 }
 
-function renderSiteGrid() {
+// ═══════════════════════════════════════
+// 사이트별 탭 전체 렌더링
+// ═══════════════════════════════════════
+function renderSitePage() {
   const uk  = usageKey();
   const uak = usageAvgKey();
+  const cuk = chargerUK();
+  const lbl = G.useRecent ? "최신1개월" : "전체기간";
+
   const sorted = [...G.site.filtered]
-    .sort((a,b)=>(b[uk]||0)-(a[uk]||0));
+    .sort((a, b) => (b[uk] || 0) - (a[uk] || 0));
 
   const total = sorted.length;
-  const start = (G.site.page-1)*G.site.perPage;
-  const page  = sorted.slice(start, start+G.site.perPage);
+  const start = (G.site.page - 1) * G.site.perPage;
+  const page  = sorted.slice(start, start + G.site.perPage);
 
   document.getElementById("site-count-info").textContent =
     `총 ${fmt(total)}개 사이트`;
 
-  const lbl = G.useRecent?"최신1개월":"전체기간";
+  // ── ① 사이트별 집계 테이블 ───────────────────────
+  const siteTableRows = page.map(s => `
+    <tr>
+      <td><b>${s.대표사이트명 || s.충전소명 || "-"}</b></td>
+      <td>${s.주소 || "-"}</td>
+      <td><span class="badge badge-blue">${s.권역 || "-"}</span></td>
+      <td style="text-align:right;">${fmt(s.충전기수)}대</td>
+      <td style="text-align:right;">${fmtK(s[uk])}</td>
+      <td style="text-align:right;">${fmtK(s[uak])}</td>
+      <td style="text-align:right;">${fmtK(s.총누적사용량)}</td>
+      <td>${contractBadge(s.계약상태)}</td>
+    </tr>`).join("");
 
-  document.getElementById("site-grid").innerHTML = page.map((s,i) => {
-    const siteIdx = start+i;
-    const remText = s.잔여일수!=null && s.잔여일수>-9000
-      ? (s.잔여일수<0?`만료 ${Math.abs(s.잔여일수)}일 경과`:`잔여 ${fmt(s.잔여일수)}일`)
-      : "";
-
-    // 해당 사이트 충전기 목록
-    const chargers = G.data.chargers
-      .filter(c=>c.사이트키===s.사이트키)
-      .sort((a,b)=>(b[chargerUK()]||0)-(a[chargerUK()]||0));
-
-    const chargerRows = chargers.map(c=>`
-      <tr style="border-bottom:1px solid #f1f5f9;">
-        <td style="padding:5px 6px;font-size:.76rem;">${c.충전기ID||"-"}</td>
-        <td style="padding:5px 6px;font-size:.76rem;">${c.상세주소||"-"}</td>
-        <td style="padding:5px 6px;font-size:.76rem;">
-          <span class="badge badge-blue">${c.모델분류||"-"}</span>
-        </td>
-        <td style="padding:5px 6px;font-size:.76rem;text-align:right;">
-          ${fmtK(c[chargerUK()])}
-        </td>
-        <td style="padding:5px 6px;font-size:.76rem;text-align:center;">
-          ${contractBadge(c.계약상태)}
-        </td>
-        <td style="padding:5px 6px;font-size:.76rem;color:var(--text2);">
-          ${c.운영계약종료||"-"}
-        </td>
-      </tr>`).join("");
-
-    const borderColor = {
-      "계약만료":"var(--red)","만료임박":"var(--orange)",
-      "만료예정":"var(--yellow)","정상운영":"var(--green)","정보없음":"var(--gray)"
-    }[s.계약상태]||"var(--blue)";
-
-    return `
-    <div class="site-card" style="border-top:3px solid ${borderColor};">
-      <div class="site-card-header" onclick="toggleSiteChargers(${siteIdx})">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-          <div class="site-name">${s.대표사이트명||s.충전소명||"-"}</div>
-          <div>${contractBadge(s.계약상태)}</div>
-        </div>
-        <div class="site-addr">
-          📍 ${s.주소||"-"}
-          ${s.권역?`<span class="badge badge-blue" style="margin-left:4px;">${s.권역}</span>`:""}
-        </div>
-        <div class="site-stats">
-          <div class="site-stat">🔌 <b>${fmt(s.충전기수)}대</b></div>
-          <div class="site-stat">⚡ <b>${fmtK(s[uk])}</b> kWh/월</div>
-          <div class="site-stat">📊 충전기당 <b>${fmtK(s[uak])}</b></div>
-          ${remText?`<div class="site-stat" style="color:${borderColor};">⏳ ${remText}</div>`:""}
-          ${s.운영계약종료?`<div class="site-stat" style="color:var(--text2);">📅 ${s.운영계약종료}</div>`:""}
-        </div>
-        <div style="font-size:.75rem;color:var(--text2);margin-top:4px;">
-          ▼ 충전기 ${chargers.length}대 상세보기
+  document.getElementById("site-table-wrap").innerHTML = `
+    <div class="table-wrap">
+      <div class="table-header">
+        <h3>🏢 사이트별 현황 [${lbl}]</h3>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" onclick="downloadCSV('site')"
+            style="font-size:.8rem;">💾 CSV</button>
+          <span class="badge badge-blue">${fmt(total)}개 사이트</span>
         </div>
       </div>
-      <div class="site-chargers" id="site-chargers-${siteIdx}">
-        <div class="site-chargers-title">
-          충전기 목록 [${lbl}] (kWh/월)
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>사이트명</th>
+              <th>주소</th>
+              <th>권역</th>
+              <th style="text-align:right;">충전기수</th>
+              <th style="text-align:right;">월합계(kWh)</th>
+              <th style="text-align:right;">충전기당(kWh)</th>
+              <th style="text-align:right;">총누적(kWh)</th>
+              <th>계약상태</th>
+            </tr>
+          </thead>
+          <tbody>${siteTableRows || `<tr><td colspan="8"
+            style="text-align:center;padding:30px;color:var(--text2);">
+            검색 결과 없음</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div id="site-pagination-area"></div>`;
+
+  renderPagination("site2", total, G.site.page, G.site.perPage,
+    p => { G.site.page = p; renderSitePage(); },
+    "site-pagination-area");
+
+  // ── ② 해당 사이트들의 충전기 목록 ────────────────
+  const siteKeys = new Set(page.map(s => s.사이트키));
+  const siteChargers = G.data.chargers
+    .filter(c => siteKeys.has(c.사이트키))
+    .sort((a, b) => (b[cuk] || 0) - (a[cuk] || 0));
+
+  const chargerRows = siteChargers.map(c => `
+    <tr>
+      <td>${c.충전기ID || "-"}</td>
+      <td>${c.충전소명 || "-"}</td>
+      <td>${c.상세주소 || "-"}</td>
+      <td><span class="badge badge-blue">${c.모델분류 || "-"}</span></td>
+      <td>${c.충전기유형 || "-"}</td>
+      <td style="text-align:right;">${fmtK(c.월사용량_전체)}</td>
+      <td style="text-align:right;">${fmtK(c.월사용량_최신)}</td>
+      <td style="text-align:right;">${fmtK(c.누적사용량_daily)}</td>
+      <td>${contractBadge(c.계약상태)}</td>
+      <td style="color:var(--text2);">${c.운영계약종료 || "-"}</td>
+    </tr>`).join("");
+
+  document.getElementById("site-charger-wrap").innerHTML = `
+    <div class="table-wrap">
+      <div class="table-header">
+        <h3>🔌 충전기별 현황 [${lbl}]</h3>
+        <span class="badge badge-blue">${fmt(siteChargers.length)}대</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>충전기ID</th>
+              <th>충전소명</th>
+              <th>상세주소</th>
+              <th>모델</th>
+              <th>유형</th>
+              <th style="text-align:right;">월평균(전체)</th>
+              <th style="text-align:right;">월평균(최신)</th>
+              <th style="text-align:right;">누적(kWh)</th>
+              <th>계약상태</th>
+              <th>계약종료일</th>
+            </tr>
+          </thead>
+          <tbody>${chargerRows || `<tr><td colspan="10"
+            style="text-align:center;padding:20px;color:var(--text2);">
+            데이터 없음</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // ── ③ 계약 현황 카드 ─────────────────────────────
+  const contractCards = page.map(s => {
+    const borderColor = {
+      "계약만료":"var(--red)", "만료임박":"var(--orange)",
+      "만료예정":"var(--yellow)", "정상운영":"var(--green)",
+      "정보없음":"var(--gray)"
+    }[s.계약상태] || "var(--gray)";
+
+    const remText = s.잔여일수 != null && s.잔여일수 > -9000
+      ? (s.잔여일수 < 0
+          ? `만료 ${Math.abs(s.잔여일수)}일 경과`
+          : `잔여 ${fmt(s.잔여일수)}일`)
+      : "-";
+
+    // 계약 진행률
+    let progress = 0;
+    if (s.운영계약시작 && s.운영계약종료) {
+      const start = new Date(s.운영계약시작).getTime();
+      const end   = new Date(s.운영계약종료).getTime();
+      const now   = Date.now();
+      progress = Math.min(100, Math.max(0,
+        Math.round((now - start) / (end - start) * 100)
+      ));
+    }
+
+    return `
+    <div style="background:var(--card);border-radius:var(--radius);
+      border-left:4px solid ${borderColor};padding:16px;
+      box-shadow:var(--shadow);">
+      <div style="display:flex;justify-content:space-between;
+        align-items:flex-start;margin-bottom:8px;">
+        <div style="font-weight:700;font-size:.95rem;">
+          🏢 ${s.대표사이트명 || s.충전소명 || "-"}
         </div>
-        <div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;">
-            <thead>
-              <tr style="background:#f8fafc;font-size:.75rem;">
-                <th style="padding:5px 6px;text-align:left;">충전기ID</th>
-                <th style="padding:5px 6px;text-align:left;">상세주소</th>
-                <th style="padding:5px 6px;text-align:left;">모델</th>
-                <th style="padding:5px 6px;text-align:right;">월사용량</th>
-                <th style="padding:5px 6px;text-align:center;">계약상태</th>
-                <th style="padding:5px 6px;text-align:left;">계약종료</th>
-              </tr>
-            </thead>
-            <tbody>${chargerRows}</tbody>
-          </table>
-        </div>
+        ${contractBadge(s.계약상태)}
+      </div>
+      <div style="font-size:.78rem;color:var(--text2);margin-bottom:8px;">
+        📍 ${s.주소 || "-"}
+      </div>
+      <div style="display:flex;gap:12px;font-size:.82rem;margin-bottom:8px;flex-wrap:wrap;">
+        <span>🔌 <b>${fmt(s.충전기수)}대</b></span>
+        <span>⚡ <b>${fmtK(s[uk])} kWh/월</b></span>
+        <span style="color:${borderColor};font-weight:700;">⏳ ${remText}</span>
+      </div>
+      <div style="font-size:.78rem;color:var(--text2);margin-bottom:8px;">
+        📅 ${s.운영계약시작 || "-"} ~ ${s.운영계약종료 || "-"}
+      </div>
+      <div style="background:#f1f5f9;border-radius:6px;height:8px;overflow:hidden;">
+        <div style="background:${borderColor};height:100%;
+          width:${progress}%;transition:width .3s;border-radius:6px;"></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--text2);margin-top:4px;text-align:right;">
+        계약 진행률 ${progress}%
       </div>
     </div>`;
   }).join("");
 
-  renderPagination("site", total, G.site.page, G.site.perPage,
-    p=>{ G.site.page=p; renderSiteGrid(); });
+  document.getElementById("site-contract-wrap").innerHTML = `
+    <div style="background:var(--card);border-radius:var(--radius);
+      padding:16px;box-shadow:var(--shadow);margin-bottom:20px;">
+      <h3 style="font-size:.95rem;font-weight:700;margin-bottom:14px;">
+        📅 계약 현황
+      </h3>
+      <div style="display:grid;
+        grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
+        ${contractCards || `<div style="color:var(--text2);padding:20px;">
+          데이터 없음</div>`}
+      </div>
+    </div>`;
 }
+
+// ═══════════════════════════════════════
+// 사이트 검색
+// ═══════════════════════════════════════
+function onSiteSearch() {
+  const kw       = document.getElementById("site-search").value.toLowerCase().trim();
+  const region   = document.getElementById("site-region-filter").value;
+  const contract = document.getElementById("site-contract-filter").value;
+
+  G.site.filtered = G.data.sites.filter(s => {
+    const search = `${s.대표사이트명||""} ${s.충전소명||""} ${s.주소||""}`.toLowerCase();
+    return (!kw       || search.includes(kw))
+        && (!region   || s.권역     === region)
+        && (!contract || s.계약상태 === contract);
+  });
+  G.site.page = 1;
+  renderSitePage();
+}
+
+function clearSiteFilter() {
+  document.getElementById("site-search").value          = "";
+  document.getElementById("site-region-filter").value   = "";
+  document.getElementById("site-contract-filter").value = "";
+  G.site.filtered = [...G.data.sites];
+  G.site.page = 1;
+  renderSitePage();
+}
+
 
 function toggleSiteChargers(idx) {
   const el = document.getElementById(`site-chargers-${idx}`);
@@ -589,7 +719,7 @@ function onSiteSearch() {
         && (!contract || s.계약상태 === contract);
   });
   G.site.page = 1;
-  renderSiteGrid();
+  renderSitePage();
 }
 
 function clearSiteFilter() {
@@ -598,7 +728,7 @@ function clearSiteFilter() {
   document.getElementById("site-contract-filter").value= "";
   G.site.filtered = [...G.data.sites];
   G.site.page = 1;
-  renderSiteGrid();
+  renderSitePage();
 }
 
 // ═══════════════════════════════════════
@@ -844,9 +974,10 @@ function buildHeatmap() {
 // ═══════════════════════════════════════
 // 페이지네이션
 // ═══════════════════════════════════════
-function renderPagination(id, total, current, perPage, callback) {
-  const totalPages=Math.ceil(total/perPage);
-  const el=document.getElementById(`${id}-pagination`);
+function renderPagination(id, total, current, perPage, callback, containerId) {
+  const totalPages = Math.ceil(total / perPage);
+  const elId = containerId || `${id}-pagination`;  // ← 이 줄 추가
+  const el   = document.getElementById(elId);       // ← id → elId 로 변경
   if(!el||totalPages<=1){ if(el) el.innerHTML=""; return; }
 
   const pages=[1];

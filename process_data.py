@@ -82,7 +82,7 @@ def read_excel_by_index(path: str, col_map: dict) -> pd.DataFrame:
     return result
 
 def read_a3_date(path: str) -> str:
-    """A3 셀에서 기준일시 읽기"""
+    """A3 셀에서 날짜 문자열 추출"""
     try:
         from openpyxl import load_workbook
         wb = load_workbook(path, data_only=True, read_only=True)
@@ -92,8 +92,13 @@ def read_a3_date(path: str) -> str:
             return "정보없음"
         if isinstance(val, datetime):
             return val.strftime("%Y-%m-%d %H:%M:%S")
-        return str(val).strip()
-    except:
+        # "출력 일시 : 2026-03-16 09:13" 형태에서 날짜만 추출
+        s = str(val).strip()
+        match = re.search(r'(\d{4}-\d{2}-\d{2})', s)
+        if match:
+            return match.group(1)
+        return s
+    except Exception as e:
         return "정보없음"
 
 # ═══════════════════════════════════════
@@ -354,11 +359,10 @@ def process():
     df_daily   = read_excel_by_index(DAILY_FILE, COL_IDX_DAILY)
 
     # ── 날짜 파싱 수정 ──────────────────────────────────
-    def parse_snap_date(s):
+    def parse_snap_date(s: str):
+        """날짜 문자열 → datetime 변환"""
         if not s or s == "정보없음":
             return None
-        # "출력 일시 : 2026-03-16 09:13" 형태 처리
-        import re
         match = re.search(r'(\d{4}-\d{2}-\d{2})', str(s))
         if match:
             try:

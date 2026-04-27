@@ -353,20 +353,36 @@ def process():
     daily_date = read_a3_date(DAILY_FILE)
     df_daily   = read_excel_by_index(DAILY_FILE, COL_IDX_DAILY)
 
-    # ── 2) 날짜 파싱 ──────────────────────────────────
+    # ── 날짜 파싱 수정 ──────────────────────────────────
     def parse_snap_date(s):
-        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d"]:
+        if not s or s == "정보없음":
+            return None
+        # "출력 일시 : 2026-03-16 09:13" 형태 처리
+        import re
+        match = re.search(r'(\d{4}-\d{2}-\d{2})', str(s))
+        if match:
             try:
-                return datetime.strptime(str(s).strip()[:19], fmt)
+                return datetime.strptime(match.group(1), "%Y-%m-%d")
             except:
-                continue
+                pass
         return None
-
-    dt_base  = parse_snap_date(base_date)  or datetime(2024, 1, 1)
-    dt_daily = parse_snap_date(daily_date) or datetime.now()
+    
+    dt_base  = parse_snap_date(base_date)
+    dt_daily = parse_snap_date(daily_date)
+    
+    # ★ 날짜 파싱 실패 시 명확한 오류 출력
+    if dt_base is None:
+        print(f"  ❌ 기초파일 날짜 파싱 실패: '{base_date}'")
+        print(f"  ⚠️ A3셀 값을 직접 확인하세요")
+        raise ValueError(f"기초파일 날짜를 읽을 수 없습니다: {base_date}")
+    
+    if dt_daily is None:
+        print(f"  ❌ 일일파일 날짜 파싱 실패: '{daily_date}'")
+        raise ValueError(f"일일파일 날짜를 읽을 수 없습니다: {daily_date}")
+    
     diff_days = max(1, (dt_daily - dt_base).days)
-
     print(f"  기초파일 날짜: {dt_base.date()} | 일일파일 날짜: {dt_daily.date()} | 차이: {diff_days}일")
+
 
     # ── 3) 누적사용량 숫자 변환 ───────────────────────
     df_base["누적사용량_base"]   = df_base["누적사용량"].apply(safe_float)

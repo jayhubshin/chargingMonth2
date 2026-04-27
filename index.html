@@ -1,1 +1,1280 @@
 
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ EV 충전기 통합 관리 대시보드</title>
+
+<!-- CDN: Chart.js + Papa Parse + 아이콘 -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+
+<style>
+/* ═══════════ CSS 변수 ═══════════ */
+:root {
+  --blue:   #1a73e8;
+  --green:  #34a853;
+  --yellow: #fbbc04;
+  --red:    #ea4335;
+  --orange: #f57c00;
+  --gray:   #5f6368;
+  --bg:     #f8fafc;
+  --card:   #ffffff;
+  --border: #e2e8f0;
+  --text:   #1e293b;
+  --text2:  #64748b;
+  --radius: 12px;
+  --shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ═══════════ 레이아웃 ═══════════ */
+.header {
+  background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+  color: #fff;
+  padding: 20px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,.3);
+}
+.header h1 { font-size: 1.5rem; font-weight: 700; }
+.header-meta { font-size: .82rem; color: #a0b4c8; }
+
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+/* ═══════════ KPI 카드 ═══════════ */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px; margin-bottom: 24px;
+}
+.kpi-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+  border-left: 4px solid var(--blue);
+  transition: transform .15s;
+}
+.kpi-card:hover { transform: translateY(-2px); }
+.kpi-card.green  { border-left-color: var(--green); }
+.kpi-card.yellow { border-left-color: var(--yellow); }
+.kpi-card.red    { border-left-color: var(--red); }
+.kpi-card.orange { border-left-color: var(--orange); }
+
+.kpi-label { font-size: .78rem; color: var(--text2); font-weight: 600; margin-bottom: 6px; }
+.kpi-value { font-size: 1.8rem; font-weight: 800; color: var(--blue); }
+.kpi-card.green  .kpi-value { color: var(--green); }
+.kpi-card.yellow .kpi-value { color: #d97706; }
+.kpi-card.red    .kpi-value { color: var(--red); }
+.kpi-card.orange .kpi-value { color: var(--orange); }
+.kpi-unit { font-size: .75rem; color: var(--text2); margin-top: 2px; }
+
+/* ═══════════ 탭 ═══════════ */
+.tabs {
+  display: flex; gap: 4px;
+  background: var(--card);
+  padding: 6px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.tab-btn {
+  padding: 8px 16px;
+  border: none; background: none;
+  border-radius: 8px;
+  font-size: .88rem; font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all .15s;
+}
+.tab-btn:hover { background: #f1f5f9; color: var(--text); }
+.tab-btn.active {
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(26,115,232,.35);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ═══════════ 검색바 ═══════════ */
+.search-bar {
+  display: flex; gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.search-bar input {
+  flex: 1; min-width: 200px;
+  padding: 10px 16px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  font-size: .9rem;
+  outline: none;
+  transition: border-color .15s;
+}
+.search-bar input:focus { border-color: var(--blue); }
+.btn {
+  padding: 10px 18px;
+  border: none; border-radius: 8px;
+  font-size: .88rem; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.btn-primary { background: var(--blue); color: #fff; }
+.btn-primary:hover { background: #1557b0; }
+.btn-secondary { background: #f1f5f9; color: var(--text); }
+.btn-secondary:hover { background: #e2e8f0; }
+
+/* ═══════════ 상태 필터 버튼 ═══════════ */
+.filter-chips {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.chip {
+  padding: 5px 12px;
+  border-radius: 20px; border: 2px solid transparent;
+  font-size: .8rem; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+  background: #f1f5f9; color: var(--text2);
+}
+.chip:hover { border-color: var(--blue); color: var(--blue); }
+.chip.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.chip.red.active    { background: var(--red);    border-color: var(--red); }
+.chip.orange.active { background: var(--orange); border-color: var(--orange); }
+.chip.yellow.active { background: var(--yellow); border-color: var(--yellow); color: #333; }
+.chip.green.active  { background: var(--green);  border-color: var(--green); }
+
+/* ═══════════ 테이블 ═══════════ */
+.table-wrap {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.table-header {
+  padding: 14px 18px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.table-header h3 { font-size: 1rem; font-weight: 700; }
+.table-container { overflow-x: auto; max-height: 520px; overflow-y: auto; }
+
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: .83rem;
+}
+thead th {
+  background: #f8fafc;
+  padding: 10px 12px;
+  text-align: left; font-weight: 700;
+  border-bottom: 2px solid var(--border);
+  position: sticky; top: 0; z-index: 1;
+  white-space: nowrap;
+  cursor: pointer; user-select: none;
+}
+thead th:hover { background: #e2e8f0; }
+thead th.sort-asc::after  { content: " ▲"; font-size: .7rem; }
+thead th.sort-desc::after { content: " ▼"; font-size: .7rem; }
+
+tbody tr { border-bottom: 1px solid #f1f5f9; transition: background .1s; }
+tbody tr:hover { background: #f8fafc; }
+tbody td { padding: 9px 12px; white-space: nowrap; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 10px;
+  font-size: .75rem; font-weight: 600;
+}
+.badge-red    { background: #fef2f2; color: #dc2626; }
+.badge-orange { background: #fff7ed; color: #c2410c; }
+.badge-yellow { background: #fefce8; color: #b45309; }
+.badge-green  { background: #f0fdf4; color: #16a34a; }
+.badge-gray   { background: #f8fafc; color: #64748b; }
+.badge-blue   { background: #eff6ff; color: #2563eb; }
+
+/* ═══════════ 차트 그리드 ═══════════ */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px; margin-bottom: 24px;
+}
+.chart-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+.chart-card h3 {
+  font-size: .9rem; font-weight: 700;
+  margin-bottom: 14px; color: var(--text);
+}
+.chart-wrap { position: relative; height: 280px; }
+
+/* ═══════════ 토글 스위치 (전체/최신) ═══════════ */
+.toggle-group {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .85rem; font-weight: 600;
+}
+.toggle-switch {
+  position: relative; width: 52px; height: 26px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: #cbd5e1; border-radius: 26px;
+  transition: .2s; cursor: pointer;
+}
+.toggle-slider::before {
+  content: ""; position: absolute;
+  height: 20px; width: 20px;
+  left: 3px; bottom: 3px;
+  background: #fff; border-radius: 50%;
+  transition: .2s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--blue); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(26px); }
+
+/* ═══════════ 페이지네이션 ═══════════ */
+.pagination {
+  display: flex; align-items: center; gap: 6px;
+  padding: 12px 18px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.page-btn {
+  min-width: 32px; height: 32px;
+  border: 1px solid var(--border);
+  background: var(--card); color: var(--text);
+  border-radius: 6px;
+  font-size: .82rem; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.page-btn:hover { border-color: var(--blue); color: var(--blue); }
+.page-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.page-info { font-size: .82rem; color: var(--text2); }
+
+/* ═══════════ 로딩/에러 ═══════════ */
+.loading {
+  text-align: center; padding: 60px 20px;
+  color: var(--text2);
+}
+.spinner {
+  width: 40px; height: 40px;
+  border: 4px solid #e2e8f0;
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error-box {
+  background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: var(--radius); padding: 20px;
+  color: #dc2626; text-align: center;
+}
+
+/* ═══════════ 반응형 ═══════════ */
+@media (max-width: 640px) {
+  .container { padding: 12px; }
+  .kpi-grid  { grid-template-columns: repeat(2, 1fr); }
+  .chart-grid{ grid-template-columns: 1fr; }
+  .header h1 { font-size: 1.1rem; }
+}
+
+/* ═══════════ 히트맵 ═══════════ */
+.heatmap-wrap { overflow-x: auto; }
+.heatmap-table { border-collapse: collapse; font-size: .78rem; min-width: 600px; }
+.heatmap-table th, .heatmap-table td {
+  padding: 7px 10px; border: 1px solid #e2e8f0;
+  text-align: center; white-space: nowrap;
+}
+.heatmap-table th { background: #f8fafc; font-weight: 700; }
+.hm-cell { border-radius: 4px; font-weight: 600; }
+
+/* ═══════════ 정렬 화살표 ═══════════ */
+.sort-icon { font-size: .65rem; color: var(--text2); margin-left: 3px; }
+</style>
+</head>
+
+<body>
+
+<!-- ════════ 헤더 ════════ -->
+<div class="header">
+  <div>
+    <h1>⚡ EV 충전기 통합 관리 대시보드</h1>
+    <div class="header-meta" id="header-meta">데이터 로딩 중...</div>
+  </div>
+  <div id="date-diff-badge" style="font-size:.85rem;background:rgba(255,255,255,.15);
+    padding:6px 14px;border-radius:8px;color:#e8f4fd;"></div>
+</div>
+
+<!-- ════════ 메인 컨테이너 ════════ -->
+<div class="container">
+
+  <!-- 로딩 상태 -->
+  <div id="loading-area" class="loading">
+    <div class="spinner"></div>
+    <p>데이터를 불러오는 중입니다...</p>
+  </div>
+
+  <!-- 대시보드 본문 (로드 후 표시) -->
+  <div id="dashboard" style="display:none;">
+
+    <!-- KPI 카드 -->
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <!-- 사용량 기준 토글 -->
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;
+      background:var(--card);padding:12px 18px;border-radius:var(--radius);
+      box-shadow:var(--shadow);flex-wrap:wrap;">
+      <span style="font-size:.9rem;font-weight:700;">⚡ 사용량 기준:</span>
+      <div class="toggle-group">
+        <span id="lbl-full" style="color:var(--blue);font-weight:700;">전체기간 월평균</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="usage-toggle" onchange="onUsageToggle()">
+          <span class="toggle-slider"></span>
+        </label>
+        <span id="lbl-recent" style="color:var(--text2);">최신 1개월</span>
+      </div>
+      <span id="toggle-desc" style="font-size:.8rem;color:var(--text2);margin-left:8px;"></span>
+    </div>
+
+    <!-- 탭 네비게이션 -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('tab-overview',this)">📊 전체 현황</button>
+      <button class="tab-btn" onclick="switchTab('tab-site',this)">🏢 사이트별</button>
+      <button class="tab-btn" onclick="switchTab('tab-charger',this)">🔌 충전기별</button>
+      <button class="tab-btn" onclick="switchTab('tab-model',this)">📦 모델별</button>
+      <button class="tab-btn" onclick="switchTab('tab-region',this)">🗺️ 권역별</button>
+      <button class="tab-btn" onclick="switchTab('tab-contract',this)">📅 계약 현황</button>
+    </div>
+
+    <!-- ════════ 탭: 전체 현황 ════════ -->
+    <div id="tab-overview" class="tab-panel active">
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>📊 모델별 충전기 수량 (상위 15)</h3>
+          <div class="chart-wrap"><canvas id="chart-model-count"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>🗺️ 권역별 충전기 수량</h3>
+          <div class="chart-wrap"><canvas id="chart-region-count"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3 id="chart-model-usage-title">📈 모델별 월사용량 합계 (상위 15)</h3>
+          <div class="chart-wrap"><canvas id="chart-model-usage"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3 id="chart-region-usage-title">🗺️ 권역별 월사용량 합계</h3>
+          <div class="chart-wrap"><canvas id="chart-region-usage"></canvas></div>
+        </div>
+      </div>
+
+      <!-- 히트맵: 권역 × 모델 -->
+      <div class="chart-card" style="margin-bottom:24px;">
+        <h3 id="heatmap-title">🔥 권역 × 모델 사용량 히트맵</h3>
+        <div class="heatmap-wrap" id="heatmap-container">
+          <div class="loading" style="padding:30px;">히트맵 생성 중...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ 탭: 사이트별 ════════ -->
+    <div id="tab-site" class="tab-panel">
+      <div class="search-bar">
+        <input type="text" id="site-search" placeholder="사이트명 또는 주소 검색..."
+          oninput="onSiteSearch()">
+        <select id="site-region-filter" onchange="onSiteSearch()"
+          style="padding:10px 12px;border:2px solid var(--border);border-radius:8px;
+            font-size:.88rem;outline:none;background:var(--card);">
+          <option value="">전체 권역</option>
+        </select>
+        <button class="btn btn-secondary" onclick="clearSiteFilter()">✕ 초기화</button>
+      </div>
+
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>🏢 사이트별 현황</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-secondary" onclick="downloadCSV('site')"
+              style="font-size:.8rem;padding:6px 12px;">💾 CSV</button>
+            <span id="site-count-badge" class="badge badge-blue"></span>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr id="site-thead"></tr>
+            </thead>
+            <tbody id="site-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="site-pagination"></div>
+      </div>
+    </div>
+
+    <!-- ════════ 탭: 충전기별 ════════ -->
+    <div id="tab-charger" class="tab-panel">
+      <div class="search-bar">
+        <input type="text" id="charger-search" placeholder="충전기ID, 충전소명, 주소 검색..."
+          oninput="onChargerSearch()">
+        <select id="charger-model-filter" onchange="onChargerSearch()"
+          style="padding:10px 12px;border:2px solid var(--border);border-radius:8px;
+            font-size:.88rem;outline:none;background:var(--card);">
+          <option value="">전체 모델</option>
+        </select>
+        <select id="charger-region-filter" onchange="onChargerSearch()"
+          style="padding:10px 12px;border:2px solid var(--border);border-radius:8px;
+            font-size:.88rem;outline:none;background:var(--card);">
+          <option value="">전체 권역</option>
+        </select>
+        <button class="btn btn-secondary" onclick="clearChargerFilter()">✕ 초기화</button>
+      </div>
+
+      <div class="filter-chips" id="charger-status-chips"></div>
+
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>🔌 충전기별 현황</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-secondary" onclick="downloadCSV('charger')"
+              style="font-size:.8rem;padding:6px 12px;">💾 CSV</button>
+            <span id="charger-count-badge" class="badge badge-blue"></span>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead><tr id="charger-thead"></tr></thead>
+            <tbody id="charger-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="charger-pagination"></div>
+      </div>
+    </div>
+
+    <!-- ════════ 탭: 모델별 ════════ -->
+    <div id="tab-model" class="tab-panel">
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>📦 모델별 집계</h3>
+          <button class="btn btn-secondary" onclick="downloadCSV('model')"
+            style="font-size:.8rem;padding:6px 12px;">💾 CSV</button>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead><tr id="model-thead"></tr></thead>
+            <tbody id="model-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ 탭: 권역별 ════════ -->
+    <div id="tab-region" class="tab-panel">
+      <div class="chart-grid" id="region-charts"></div>
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>🗺️ 권역별 집계</h3>
+          <button class="btn btn-secondary" onclick="downloadCSV('region')"
+            style="font-size:.8rem;padding:6px 12px;">💾 CSV</button>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead><tr id="region-thead"></tr></thead>
+            <tbody id="region-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ 탭: 계약 현황 ════════ -->
+    <div id="tab-contract" class="tab-panel">
+      <div class="filter-chips" id="contract-chips"></div>
+      <div id="contract-cards-grid" style="display:grid;
+        grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;"></div>
+    </div>
+
+  </div><!-- /dashboard -->
+</div><!-- /container -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// 전역 상태
+// ═══════════════════════════════════════════════════════════
+let G = {
+  data:           null,   // processed.json 전체
+  useRecent:      false,  // false=전체기간, true=최신1개월
+  // 충전기 테이블 상태
+  charger: { filtered:[], page:1, perPage:50, sortCol:"월사용량_전체", sortDir:-1 },
+  // 사이트 테이블 상태
+  site:    { filtered:[], page:1, perPage:30, sortCol:"월사용량_전체합", sortDir:-1 },
+  // 차트 인스턴스 (재렌더 시 파괴용)
+  charts: {},
+};
+
+// 권역 정렬 순서
+const REGION_ORDER = [
+  "수도권북동","수도권북서","수도권남동","수도권남서",
+  "수도권기타","인천기타","강원권","충청권","전라권","경상권","제주권","기타"
+];
+
+// ═══════════════════════════════════════════════════════════
+// 숫자 포맷
+// ═══════════════════════════════════════════════════════════
+const fmt  = (v, d=0) => v==null ? "-" : Number(v).toLocaleString("ko-KR",{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtK = v => v==null ? "-" : (v >= 1000 ? fmt(v,0) : fmt(v,1));
+
+// ═══════════════════════════════════════════════════════════
+// 데이터 로드
+// ═══════════════════════════════════════════════════════════
+async function loadData() {
+  try {
+    // 캐시 버스팅: ?t=타임스탬프 (1시간 단위)
+    const ts  = Math.floor(Date.now() / 3_600_000);
+    const url = `data/processed.json?t=${ts}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    G.data = await res.json();
+    initDashboard();
+  } catch(e) {
+    document.getElementById("loading-area").innerHTML =
+      `<div class="error-box">
+        <b>❌ 데이터 로드 실패</b><br>${e.message}<br>
+        <small>data/processed.json 파일이 존재하는지 확인하세요.</small>
+      </div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 초기화
+// ═══════════════════════════════════════════════════════════
+function initDashboard() {
+  const m = G.data.meta;
+  document.getElementById("loading-area").style.display = "none";
+  document.getElementById("dashboard").style.display    = "block";
+
+  // 헤더 메타
+  document.getElementById("header-meta").textContent =
+    `기초파일: ${m.base_date || "-"}  |  최신파일: ${m.daily_date || "-"}  |  생성: ${m.generated_at}`;
+  document.getElementById("date-diff-badge").textContent =
+    `📅 측정 기간: ${m.diff_days}일`;
+
+  // 토글 설명 초기화
+  updateToggleDesc();
+
+  renderKPI();
+  renderCharts();
+  buildHeatmap();
+
+  // 테이블 초기화
+  G.charger.filtered = [...G.data.chargers];
+  G.site.filtered    = [...G.data.sites];
+  buildFilters();
+  renderChargerTable();
+  renderSiteTable();
+  renderModelTable();
+  renderRegionTable();
+  renderContractCards();
+}
+
+// ═══════════════════════════════════════════════════════════
+// 사용량 기준 토글
+// ═══════════════════════════════════════════════════════════
+function onUsageToggle() {
+  G.useRecent = document.getElementById("usage-toggle").checked;
+  document.getElementById("lbl-full").style.color   = G.useRecent ? "var(--text2)" : "var(--blue)";
+  document.getElementById("lbl-recent").style.color  = G.useRecent ? "var(--blue)"  : "var(--text2)";
+  document.getElementById("lbl-full").style.fontWeight   = G.useRecent ? "400" : "700";
+  document.getElementById("lbl-recent").style.fontWeight = G.useRecent ? "700" : "400";
+  updateToggleDesc();
+  renderKPI();
+  renderCharts();
+  buildHeatmap();
+  renderChargerTable();
+  renderSiteTable();
+  renderModelTable();
+  renderRegionTable();
+}
+
+function updateToggleDesc() {
+  const m = G.data?.meta;
+  document.getElementById("toggle-desc").textContent = G.useRecent
+    ? `(${m?.base_date} ~ ${m?.daily_date}, ${m?.diff_days}일 기준 × 30)`
+    : "(운영계약 시작일 ~ 현재 기준)";
+}
+
+function usageKey(prefix="") {
+  return G.useRecent
+    ? (prefix ? `${prefix}최신합`  : "월사용량_최신")
+    : (prefix ? `${prefix}전체합`  : "월사용량_전체");
+}
+function usageAvgKey(prefix="") {
+  return G.useRecent
+    ? (prefix ? `충전기당_최신평균` : "월사용량_최신")
+    : (prefix ? `충전기당_전체평균` : "월사용량_전체");
+}
+
+// ═══════════════════════════════════════════════════════════
+// KPI 카드
+// ═══════════════════════════════════════════════════════════
+function renderKPI() {
+  const d  = G.data;
+  const uk = usageKey();
+  const chargers = d.chargers;
+
+  const totalChargers = d.meta.total_chargers;
+  const totalSites    = d.meta.total_sites;
+  const totalUsage    = chargers.reduce((s,c) => s + (c[uk]||0), 0);
+  const avgUsage      = totalUsage / totalChargers;
+  const expired       = chargers.filter(c => c.계약상태 === "계약만료").length;
+
+  const label = G.useRecent ? "최신 1개월" : "전체기간";
+
+  document.getElementById("kpi-grid").innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">🔌 총 충전기</div>
+      <div class="kpi-value">${fmt(totalChargers)}</div>
+      <div class="kpi-unit">대</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">🏢 총 사이트</div>
+      <div class="kpi-value">${fmt(totalSites)}</div>
+      <div class="kpi-unit">개</div>
+    </div>
+    <div class="kpi-card yellow">
+      <div class="kpi-label">⚡ 월충전량 합계 [${label}]</div>
+      <div class="kpi-value">${fmtK(totalUsage)}</div>
+      <div class="kpi-unit">kWh/월</div>
+    </div>
+    <div class="kpi-card orange">
+      <div class="kpi-label">📊 충전기당 월평균 [${label}]</div>
+      <div class="kpi-value">${fmtK(avgUsage)}</div>
+      <div class="kpi-unit">kWh/월</div>
+    </div>
+    <div class="kpi-card red">
+      <div class="kpi-label">🔴 계약 만료</div>
+      <div class="kpi-value">${fmt(expired)}</div>
+      <div class="kpi-unit">대</div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 차트
+// ═══════════════════════════════════════════════════════════
+function destroyChart(id) {
+  if (G.charts[id]) { G.charts[id].destroy(); delete G.charts[id]; }
+}
+
+function makeBarChart(id, labels, data, color="#1a73e8", horizontal=true) {
+  destroyChart(id);
+  const ctx = document.getElementById(id)?.getContext("2d");
+  if (!ctx) return;
+  G.charts[id] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: color + "cc",
+        borderColor: color, borderWidth: 1, borderRadius: 4 }]
+    },
+    options: {
+      indexAxis: horizontal ? "y" : "x",
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend:{ display:false },
+        datalabels:{ display:false } },
+      scales: {
+        x: { grid:{ display:false } },
+        y: { grid:{ display: !horizontal } }
+      }
+    }
+  });
+}
+
+function makePieChart(id, labels, data) {
+  destroyChart(id);
+  const ctx = document.getElementById(id)?.getContext("2d");
+  if (!ctx) return;
+  const COLORS = [
+    "#1a73e8","#34a853","#fbbc04","#ea4335","#9c27b0",
+    "#00bcd4","#ff5722","#607d8b","#795548","#e91e63",
+    "#3f51b5","#009688"
+  ];
+  G.charts[id] = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: COLORS.slice(0, labels.length),
+        borderWidth: 2, borderColor: "#fff"
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position:"right", labels:{ font:{size:11}, boxWidth:14 } },
+        datalabels: { display: false }
+      },
+      cutout: "40%"
+    }
+  });
+}
+
+function renderCharts() {
+  const uk = usageKey("월사용량_");
+  const label = G.useRecent ? "최신 1개월 (kWh/월)" : "전체기간 월평균 (kWh/월)";
+
+  // 모델별 수량
+  const models = [...G.data.models]
+    .sort((a,b) => b.충전기수 - a.충전기수).slice(0, 15);
+  makeBarChart("chart-model-count",
+    models.map(m => m.모델분류),
+    models.map(m => m.충전기수),
+    "#1a73e8"
+  );
+
+  // 권역별 수량 (도넛)
+  const regions = sortRegions(G.data.regions);
+  makePieChart("chart-region-count",
+    regions.map(r => r.권역),
+    regions.map(r => r.충전기수)
+  );
+
+  // 모델별 사용량
+  document.getElementById("chart-model-usage-title").textContent =
+    `📈 모델별 ${label} 합계 (상위 15)`;
+  const modelsUsage = [...G.data.models]
+    .sort((a,b) => (b[uk]||0) - (a[uk]||0)).slice(0, 15);
+  makeBarChart("chart-model-usage",
+    modelsUsage.map(m => m.모델분류),
+    modelsUsage.map(m => m[uk]||0),
+    "#34a853"
+  );
+
+  // 권역별 사용량
+  document.getElementById("chart-region-usage-title").textContent =
+    `🗺️ 권역별 ${label} 합계`;
+  makeBarChart("chart-region-usage",
+    regions.map(r => r.권역),
+    regions.map(r => r[uk]||0),
+    "#fbbc04",
+    false
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 히트맵 (권역 × 모델)
+// ═══════════════════════════════════════════════════════════
+function buildHeatmap() {
+  const uk = usageKey("월사용량_");
+  const chargers = G.data.chargers;
+
+  // 상위 12 모델
+  const modelCounts = {};
+  chargers.forEach(c => {
+    if (c.모델분류) modelCounts[c.모델분류] = (modelCounts[c.모델분류]||0) + 1;
+  });
+  const topModels = Object.entries(modelCounts)
+    .sort((a,b) => b[1]-a[1]).slice(0,12).map(e=>e[0]);
+
+  const existingRegions = REGION_ORDER.filter(r =>
+    chargers.some(c => c.권역 === r)
+  );
+
+  // 피벗: 합계
+  const pivot = {};
+  chargers.forEach(c => {
+    const m = c.모델분류;
+    const r = c.권역;
+    if (!m || !r) return;
+    if (!topModels.includes(m)) return;
+    if (!pivot[m]) pivot[m] = {};
+    pivot[m][r] = (pivot[m][r]||0) + (c[G.useRecent ? "월사용량_최신" : "월사용량_전체"]||0);
+  });
+
+  // 히트맵 색상 계산
+  const allVals = [];
+  topModels.forEach(m => existingRegions.forEach(r => {
+    if (pivot[m]?.[r]) allVals.push(pivot[m][r]);
+  }));
+  const maxVal = allVals.length ? Math.max(...allVals) : 1;
+
+  function cellColor(v) {
+    if (!v) return "#f8fafc";
+    const t = v / maxVal;
+    const r = Math.round(26  + (234-26)   * (1-t));
+    const g = Math.round(115 + (248-115)  * (1-t));
+    const b = Math.round(232 + (252-232)  * (1-t));
+    // 진한쪽: #1a73e8, 연한쪽: #eaf8fc 역방향
+    const r2 = Math.round(234 - (234-26)*t);
+    const g2 = Math.round(248 - (248-115)*t);
+    const b2 = Math.round(252 - (252-232)*t);
+    return `rgb(${r2},${g2},${b2})`;
+  }
+  function textColor(v) {
+    return v / maxVal > 0.5 ? "#fff" : "#1e293b";
+  }
+
+  let html = `<table class="heatmap-table"><thead><tr>
+    <th>모델</th>
+    ${existingRegions.map(r=>`<th>${r}</th>`).join("")}
+    <th>합계</th>
+  </tr></thead><tbody>`;
+
+  topModels.forEach(m => {
+    let rowSum = 0;
+    const cells = existingRegions.map(r => {
+      const v = pivot[m]?.[r] || 0;
+      rowSum += v;
+      const bg = cellColor(v);
+      const fc = textColor(v);
+      return `<td class="hm-cell" style="background:${bg};color:${fc};">${v?fmtK(v):"·"}</td>`;
+    });
+    html += `<tr><td style="text-align:left;font-weight:600;">${m}</td>
+      ${cells.join("")}
+      <td style="font-weight:700;">${fmtK(rowSum)}</td></tr>`;
+  });
+
+  // 합계 행
+  const colSums = existingRegions.map(r =>
+    topModels.reduce((s,m) => s + (pivot[m]?.[r]||0), 0)
+  );
+  html += `<tr style="background:#f0f6ff;font-weight:700;">
+    <td>합계</td>
+    ${colSums.map(v=>`<td>${fmtK(v)}</td>`).join("")}
+    <td>${fmtK(colSums.reduce((s,v)=>s+v,0))}</td>
+  </tr></tbody></table>`;
+
+  const lbl = G.useRecent ? "최신 1개월" : "전체기간";
+  document.getElementById("heatmap-title").textContent =
+    `🔥 권역 × 모델 사용량 히트맵 [${lbl}] (kWh/월)`;
+  document.getElementById("heatmap-container").innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 필터 셀렉트 구성
+// ═══════════════════════════════════════════════════════════
+function buildFilters() {
+  const d = G.data;
+
+  // 권역 목록
+  const regions = [...new Set(d.chargers.map(c=>c.권역).filter(Boolean))]
+    .sort((a,b) => REGION_ORDER.indexOf(a) - REGION_ORDER.indexOf(b));
+
+  const regionOpts = regions.map(r=>`<option value="${r}">${r}</option>`).join("");
+  document.getElementById("site-region-filter").innerHTML   = `<option value="">전체 권역</option>${regionOpts}`;
+  document.getElementById("charger-region-filter").innerHTML= `<option value="">전체 권역</option>${regionOpts}`;
+
+  // 모델 목록
+  const models = [...new Set(d.chargers.map(c=>c.모델분류).filter(Boolean))].sort();
+  document.getElementById("charger-model-filter").innerHTML =
+    `<option value="">전체 모델</option>` +
+    models.map(m=>`<option value="${m}">${m}</option>`).join("");
+
+  // 계약 상태 칩
+  const statusMap = {
+    "전체":    { key:"",       cls:""},
+    "🔴 만료": { key:"계약만료", cls:"red"},
+    "🟠 임박": { key:"만료임박", cls:"orange"},
+    "🟡 예정": { key:"만료예정", cls:"yellow"},
+    "🟢 정상": { key:"정상운영", cls:"green"},
+    "⚪ 미상": { key:"정보없음", cls:""},
+  };
+  let chips = "";
+  for (const [label, {key, cls}] of Object.entries(statusMap)) {
+    const cnt = key ? d.chargers.filter(c=>c.계약상태===key).length : d.chargers.length;
+    chips += `<button class="chip ${cls}" data-status="${key}"
+      onclick="onContractChip(this)">${label} (${fmt(cnt)})</button>`;
+  }
+  document.getElementById("charger-status-chips").innerHTML = chips;
+  document.querySelector("#charger-status-chips .chip").classList.add("active");
+}
+
+// ═══════════════════════════════════════════════════════════
+// 충전기 테이블
+// ═══════════════════════════════════════════════════════════
+const CHARGER_COLS = [
+  { key:"충전기ID",        label:"충전기ID",      fmt: v=>v||"-" },
+  { key:"충전소명",        label:"충전소명",      fmt: v=>v||"-" },
+  { key:"사이트키",        label:"사이트",        fmt: v=>v||"-" },
+  { key:"주소1",           label:"주소",          fmt: v=>v||"-" },
+  { key:"모델분류",        label:"모델",          fmt: v=>v ? `<span class="badge badge-blue">${v}</span>` : "-" },
+  { key:"권역",            label:"권역",          fmt: v=>v||"-" },
+  { key:"월사용량_전체",   label:"월평균(전체)",  fmt: v=>fmtK(v) },
+  { key:"월사용량_최신",   label:"월평균(최신)",  fmt: v=>fmtK(v) },
+  { key:"누적사용량_daily",label:"누적(최신)",    fmt: v=>fmtK(v) },
+  { key:"계약상태",        label:"계약상태",      fmt: contractBadge },
+  { key:"잔여일수",        label:"잔여일",        fmt: v=>v==null ? "-" : (v<0 ? `<span style="color:var(--red);">${fmt(v)}일</span>` : `${fmt(v)}일`) },
+];
+
+function contractBadge(v) {
+  const map = {
+    "계약만료": "badge-red",   "만료임박": "badge-orange",
+    "만료예정": "badge-yellow","정상운영": "badge-green",
+    "정보없음": "badge-gray",
+  };
+  return v ? `<span class="badge ${map[v]||"badge-gray"}">${v}</span>` : "-";
+}
+
+function renderChargerTable() {
+  const uk  = G.useRecent ? "월사용량_최신" : "월사용량_전체";
+  G.charger.sortCol = uk;
+
+  const tbody = document.getElementById("charger-tbody");
+  const thead = document.getElementById("charger-thead");
+
+  // 헤더
+  thead.innerHTML = CHARGER_COLS.map(c =>
+    `<th onclick="sortCharger('${c.key}')">${c.label}<span class="sort-icon">⇅</span></th>`
+  ).join("");
+
+  // 정렬
+  const sorted = [...G.charger.filtered].sort((a,b) => {
+    const va = a[G.charger.sortCol]||0, vb = b[G.charger.sortCol]||0;
+    return (typeof va === "number") ? (vb-va)*G.charger.sortDir : (String(va).localeCompare(String(vb)))*G.charger.sortDir;
+  });
+
+  // 페이지
+  const total = sorted.length;
+  const start = (G.charger.page-1) * G.charger.perPage;
+  const page  = sorted.slice(start, start + G.charger.perPage);
+
+  tbody.innerHTML = page.map(row =>
+    `<tr>${CHARGER_COLS.map(c => `<td>${c.fmt(row[c.key])}</td>`).join("")}</tr>`
+  ).join("") || `<tr><td colspan="${CHARGER_COLS.length}" style="text-align:center;color:var(--text2);padding:30px;">검색 결과 없음</td></tr>`;
+
+  document.getElementById("charger-count-badge").textContent = `${fmt(total)}대`;
+  renderPagination("charger", total, G.charger.page, G.charger.perPage, p => { G.charger.page=p; renderChargerTable(); });
+}
+
+function sortCharger(col) {
+  if (G.charger.sortCol === col) G.charger.sortDir *= -1;
+  else { G.charger.sortCol = col; G.charger.sortDir = -1; }
+  G.charger.page = 1;
+  renderChargerTable();
+}
+
+function onChargerSearch() {
+  const kw     = document.getElementById("charger-search").value.toLowerCase().trim();
+  const model  = document.getElementById("charger-model-filter").value;
+  const region = document.getElementById("charger-region-filter").value;
+  const status = document.querySelector("#charger-status-chips .chip.active")?.dataset.status || "";
+
+  G.charger.filtered = G.data.chargers.filter(c => {
+    const search = `${c.충전기ID||""} ${c.충전소명||""} ${c.주소1||""} ${c.사이트키||""}`.toLowerCase();
+    return (!kw     || search.includes(kw))
+        && (!model  || c.모델분류  === model)
+        && (!region || c.권역      === region)
+        && (!status || c.계약상태  === status);
+  });
+  G.charger.page = 1;
+  renderChargerTable();
+}
+
+function onContractChip(el) {
+  document.querySelectorAll("#charger-status-chips .chip").forEach(c=>c.classList.remove("active"));
+  el.classList.add("active");
+  onChargerSearch();
+}
+
+function clearChargerFilter() {
+  document.getElementById("charger-search").value   = "";
+  document.getElementById("charger-model-filter").value  = "";
+  document.getElementById("charger-region-filter").value = "";
+  document.querySelectorAll("#charger-status-chips .chip").forEach((c,i)=>c.classList.toggle("active",i===0));
+  G.charger.filtered = [...G.data.chargers];
+  G.charger.page = 1;
+  renderChargerTable();
+}
+
+// ═══════════════════════════════════════════════════════════
+// 사이트 테이블
+// ═══════════════════════════════════════════════════════════
+const SITE_COLS = [
+  { key:"사이트키",            label:"사이트",        fmt: v=>v||"-" },
+  { key:"충전소명",            label:"충전소명",      fmt: v=>v||"-" },
+  { key:"주소",                label:"주소",          fmt: v=>v||"-" },
+  { key:"권역",                label:"권역",          fmt: v=>v||"-" },
+  { key:"충전기수",            label:"충전기수",      fmt: v=>`${fmt(v)}대` },
+  { key:"월사용량_전체합",     label:"월합계(전체)",  fmt: v=>fmtK(v) },
+  { key:"월사용량_최신합",     label:"월합계(최신)",  fmt: v=>fmtK(v) },
+  { key:"월사용량_전체평균",   label:"충전기당(전체)",fmt: v=>fmtK(v) },
+  { key:"월사용량_최신평균",   label:"충전기당(최신)",fmt: v=>fmtK(v) },
+  { key:"총누적사용량",        label:"총누적(kWh)",   fmt: v=>fmtK(v) },
+];
+
+function renderSiteTable() {
+  const uk = G.useRecent ? "월사용량_최신합" : "월사용량_전체합";
+  G.site.sortCol = uk;
+
+  const thead = document.getElementById("site-thead");
+  const tbody  = document.getElementById("site-tbody");
+
+  thead.innerHTML = SITE_COLS.map(c =>
+    `<th onclick="sortSite('${c.key}')">${c.label}<span class="sort-icon">⇅</span></th>`
+  ).join("");
+
+  const sorted = [...G.site.filtered].sort((a,b) => {
+    const va = a[G.site.sortCol]||0, vb = b[G.site.sortCol]||0;
+    return (typeof va === "number") ? (vb-va)*G.site.sortDir : String(va).localeCompare(String(vb))*G.site.sortDir;
+  });
+
+  const total = sorted.length;
+  const start = (G.site.page-1)*G.site.perPage;
+  const page  = sorted.slice(start, start+G.site.perPage);
+
+  tbody.innerHTML = page.map(row =>
+    `<tr>${SITE_COLS.map(c => `<td>${c.fmt(row[c.key])}</td>`).join("")}</tr>`
+  ).join("") || `<tr><td colspan="${SITE_COLS.length}" style="text-align:center;padding:30px;">검색 결과 없음</td></tr>`;
+
+  document.getElementById("site-count-badge").textContent = `${fmt(total)}개 사이트`;
+  renderPagination("site", total, G.site.page, G.site.perPage, p => { G.site.page=p; renderSiteTable(); });
+}
+
+function sortSite(col) {
+  if (G.site.sortCol === col) G.site.sortDir *= -1;
+  else { G.site.sortCol = col; G.site.sortDir = -1; }
+  G.site.page = 1;
+  renderSiteTable();
+}
+
+function onSiteSearch() {
+  const kw     = document.getElementById("site-search").value.toLowerCase().trim();
+  const region = document.getElementById("site-region-filter").value;
+
+  G.site.filtered = G.data.sites.filter(s => {
+    const search = `${s.사이트키||""} ${s.충전소명||""} ${s.주소||""}`.toLowerCase();
+    return (!kw     || search.includes(kw))
+        && (!region || s.권역 === region);
+  });
+  G.site.page = 1;
+  renderSiteTable();
+}
+
+function clearSiteFilter() {
+  document.getElementById("site-search").value        = "";
+  document.getElementById("site-region-filter").value = "";
+  G.site.filtered = [...G.data.sites];
+  G.site.page = 1;
+  renderSiteTable();
+}
+
+// ═══════════════════════════════════════════════════════════
+// 모델 테이블
+// ═══════════════════════════════════════════════════════════
+function renderModelTable() {
+  const uk  = G.useRecent ? "월사용량_최신합"    : "월사용량_전체합";
+  const uk2 = G.useRecent ? "충전기당_최신평균"  : "충전기당_전체평균";
+
+  const thead = document.getElementById("model-thead");
+  const tbody  = document.getElementById("model-tbody");
+
+  thead.innerHTML = `<tr>
+    <th>모델분류</th><th>충전기수</th>
+    <th>월합계(전체)</th><th>충전기당(전체)</th>
+    <th>월합계(최신)</th><th>충전기당(최신)</th>
+    <th>총누적(kWh)</th>
+  </tr>`;
+
+  const sorted = [...G.data.models].sort((a,b)=>(b[uk]||0)-(a[uk]||0));
+  tbody.innerHTML = sorted.map(m => `<tr>
+    <td><span class="badge badge-blue">${m.모델분류||"-"}</span></td>
+    <td>${fmt(m.충전기수)}대</td>
+    <td>${fmtK(m.월사용량_전체합)}</td>
+    <td>${fmtK(m.충전기당_전체평균)}</td>
+    <td>${fmtK(m.월사용량_최신합)}</td>
+    <td>${fmtK(m.충전기당_최신평균)}</td>
+    <td>${fmtK(m.총누적사용량)}</td>
+  </tr>`).join("");
+}
+
+// ═══════════════════════════════════════════════════════════
+// 권역 테이블
+// ═══════════════════════════════════════════════════════════
+function renderRegionTable() {
+  const sorted = sortRegions(G.data.regions);
+  document.getElementById("region-thead").innerHTML = `
+    <th>권역</th><th>충전기수</th>
+    <th>월합계(전체)</th><th>충전기당(전체)</th>
+    <th>월합계(최신)</th><th>충전기당(최신)</th>
+    <th>총누적(kWh)</th>`;
+
+  document.getElementById("region-tbody").innerHTML = sorted.map(r => `<tr>
+    <td><b>${r.권역||"-"}</b></td>
+    <td>${fmt(r.충전기수)}대</td>
+    <td>${fmtK(r.월사용량_전체합)}</td>
+    <td>${fmtK(r.충전기당_전체평균)}</td>
+    <td>${fmtK(r.월사용량_최신합)}</td>
+    <td>${fmtK(r.충전기당_최신평균)}</td>
+    <td>${fmtK(r.총누적사용량)}</td>
+  </tr>`).join("");
+}
+
+function sortRegions(arr) {
+  return [...arr].sort((a,b) => {
+    const ia = REGION_ORDER.indexOf(a.권역);
+    const ib = REGION_ORDER.indexOf(b.권역);
+    return (ia===-1?99:ia) - (ib===-1?99:ib);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// 계약 현황 카드
+// ═══════════════════════════════════════════════════════════
+function renderContractCards(filter="") {
+  // 사이트별로 계약 현황 집계 (charger 데이터 기반)
+  const siteMap = {};
+  G.data.chargers.forEach(c => {
+    const k = c.사이트키 || c.충전소명 || "알수없음";
+    if (!siteMap[k]) siteMap[k] = {
+      site: k, name: c.충전소명||k, addr: c.주소1||"",
+      chargers: [], status: c.계약상태||"정보없음",
+      end: c.운영계약종료, remaining: c.잔여일수,
+    };
+    siteMap[k].chargers.push(c);
+  });
+
+  // 계약 칩 (contract 탭용)
+  const statusCounts = {};
+  Object.values(siteMap).forEach(s => {
+    statusCounts[s.status] = (statusCounts[s.status]||0)+1;
+  });
+  const total = Object.values(siteMap).length;
+
+  document.getElementById("contract-chips").innerHTML =
+    [["전체","",""],[" 🔴 만료","계약만료","red"],
+     ["🟠 임박","만료임박","orange"],["🟡 예정","만료예정","yellow"],
+     ["🟢 정상","정상운영","green"],["⚪ 미상","정보없음",""]
+    ].map(([lbl,key,cls]) => {
+      const cnt = key ? (statusCounts[key]||0) : total;
+      return `<button class="chip ${cls} ${key===filter?"active":""}" data-filter="${key}"
+        onclick="renderContractCards('${key}')">${lbl} (${fmt(cnt)})</button>`;
+    }).join("");
+
+  // 카드 렌더
+  const sites = Object.values(siteMap)
+    .filter(s => !filter || s.status === filter)
+    .sort((a,b) => (a.remaining||9999) - (b.remaining||9999));
+
+  const colorMap = {
+    "계약만료":"var(--red)","만료임박":"var(--orange)",
+    "만료예정":"var(--yellow)","정상운영":"var(--green)","정보없음":"var(--gray)"
+  };
+  const emojiMap = {
+    "계약만료":"🔴","만료임박":"🟠","만료예정":"🟡","정상운영":"🟢","정보없음":"⚪"
+  };
+
+  document.getElementById("contract-cards-grid").innerHTML = sites.map(s => {
+    const color = colorMap[s.status] || "var(--gray)";
+    const emoji = emojiMap[s.status] || "⚪";
+    const rem   = s.remaining != null && s.remaining > -9000
+      ? (s.remaining < 0 ? `만료 ${Math.abs(s.remaining)}일 경과` : `잔여 ${fmt(s.remaining)}일`)
+      : "-";
+    const models = [...new Set(s.chargers.map(c=>c.모델분류).filter(Boolean))].slice(0,3).join(" / ");
+    return `
+    <div style="background:var(--card);border-radius:var(--radius);padding:16px;
+      box-shadow:var(--shadow);border-left:4px solid ${color};">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div style="font-weight:700;font-size:.95rem;max-width:200px;word-break:break-all;">${s.name||s.site}</div>
+        <span class="badge ${s.status==="계약만료"?"badge-red":s.status==="만료임박"?"badge-orange":s.status==="만료예정"?"badge-yellow":s.status==="정상운영"?"badge-green":"badge-gray"}">${emoji} ${s.status}</span>
+      </div>
+      <div style="font-size:.8rem;color:var(--text2);margin-bottom:6px;">📍 ${s.addr||"-"}</div>
+      <div style="display:flex;gap:12px;font-size:.82rem;margin-bottom:6px;">
+        <span>🔌 <b>${s.chargers.length}대</b></span>
+        <span style="color:${color};font-weight:700;">⏳ ${rem}</span>
+      </div>
+      ${models ? `<div style="font-size:.78rem;color:var(--text2);">📦 ${models}</div>` : ""}
+      ${s.end ? `<div style="font-size:.78rem;color:var(--text2);margin-top:4px;">📅 만료: ${s.end}</div>` : ""}
+    </div>`;
+  }).join("") || `<div style="color:var(--text2);padding:30px;text-align:center;">해당 항목 없음</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 페이지네이션
+// ═══════════════════════════════════════════════════════════
+function renderPagination(id, total, current, perPage, callback) {
+  const totalPages = Math.ceil(total / perPage);
+  const el = document.getElementById(`${id}-pagination`);
+  if (!el || totalPages <= 1) { if(el) el.innerHTML=""; return; }
+
+  let html = `<span class="page-info">${fmt(total)}개 / ${totalPages}페이지</span>`;
+  const pages = [];
+  pages.push(1);
+  for (let i = Math.max(2, current-2); i <= Math.min(totalPages-1, current+2); i++) pages.push(i);
+  if (totalPages > 1) pages.push(totalPages);
+
+  const dedup = [...new Set(pages)];
+  let prev = 0;
+  html += dedup.map(p => {
+    let gap = prev > 0 && p - prev > 1 ? `<span style="padding:0 4px;color:var(--text2);">…</span>` : "";
+    prev = p;
+    return `${gap}<button class="page-btn ${p===current?"active":""}" onclick="(${callback.toString()})(${p})">${p}</button>`;
+  }).join("");
+
+  el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 탭 전환
+// ═══════════════════════════════════════════════════════════
+function switchTab(id, btn) {
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  btn.classList.add("active");
+}
+
+// ═══════════════════════════════════════════════════════════
+// CSV 다운로드
+// ═══════════════════════════════════════════════════════════
+function downloadCSV(type) {
+  const dataMap = {
+    charger: { data: G.charger.filtered, cols: CHARGER_COLS },
+    site:    { data: G.site.filtered,    cols: SITE_COLS    },
+    model:   { data: G.data.models,      cols: null },
+    region:  { data: G.data.regions,     cols: null },
+  };
+  const { data, cols } = dataMap[type] || {};
+  if (!data) return;
+
+  const keys   = cols ? cols.map(c=>c.key) : Object.keys(data[0]||{});
+  const labels = cols ? cols.map(c=>c.label) : keys;
+
+  let csv = "\uFEFF" + labels.join(",") + "\n";
+  data.forEach(row => {
+    csv += keys.map(k => {
+      let v = row[k];
+      if (v == null) return "";
+      v = String(v).replace(/<[^>]+>/g,"").replace(/,/g,"，");
+      return `"${v}"`;
+    }).join(",") + "\n";
+  });
+
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `ev_${type}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 시작
+// ═══════════════════════════════════════════════════════════
+loadData();
+</script>
+</body>
+</html>

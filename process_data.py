@@ -124,23 +124,53 @@ def normalize_addr(addr: str) -> str:
     addr = re.sub(r'\s*\d+동.*$', '', addr)
     addr = re.sub(r'\s{2,}', ' ', addr)
     return addr.strip()
+    
+def extract_site_name(name: str) -> str:
+    """
+    충전소명에서 대표 사이트명 추출
+    예) 래미안아파트1 → 래미안아파트
+        힐스테이트 101동 → 힐스테이트
+        OO아파트-3 → OO아파트
+        OO충전소_02 → OO충전소
+    """
+    if not name or str(name).strip() == '':
+        return '알수없음'
+    name = str(name).strip()
+    # 뒤쪽 숫자/기호 제거 패턴
+    # 예) -01, _02, 1호, 2번, (3), [4] 등
+    name = re.sub(r'[\s\-_]+\d+호?기?번?$', '', name)
+    name = re.sub(r'[\s\-_]+0\d+$',        '', name)
+    name = re.sub(r'\s*\(\d+\)$',          '', name)
+    name = re.sub(r'\s*\[\d+\]$',          '', name)
+    name = re.sub(r'\s*\d+$',              '', name)
+    return name.strip() or str(name).strip()
 
-
-def build_site_groups(df: pd.DataFrame) -> pd.Series:
-    addr_col = '주소1' if '주소1' in df.columns else None
+def build_site_groups(df: pd.DataFrame) -> tuple:
+    """
+    충전소명 기반으로 사이트 그루핑
+    반환: (사이트키 Series, 대표사이트명 Series)
+    """
     name_col = next(
-        (c for c in ['충전소명','사이트명','설치장소'] if c in df.columns), None
+        (c for c in ['충전소명', '사이트명', '설치장소'] if c in df.columns), None
     )
-    if addr_col:
-        normalized = df[addr_col].fillna('').apply(normalize_addr)
-    elif name_col:
-        normalized = df[name_col].fillna('알수없음')
-    else:
-        normalized = pd.Series('알수없음', index=df.index)
+    addr_col = '주소1' if '주소1' in df.columns else None
+
     if name_col:
-        fallback = df[name_col].fillna('알수없음')
-        normalized = normalized.where(normalized != '', fallback)
-    return normalized
+        # 대표사이트명 추출
+        site_name = df[name_col].fillna('알수없음').apply(extract_site_name)
+    else:
+        site_name = pd.Series('알수없음', index=df.index)
+
+    # 사이트키 = 대표사이트명 + 주소 앞부분 (동일 이름 다른 위치 구분)
+    if addr_col:
+        addr_short = df[addr_col].fillna('').apply(
+            lambda x: ' '.join(str(x).split()[:3])  # 주소 앞 3단어
+        )
+        site_key = site_name + '|' + addr_short
+    else:
+        site_key = site_name.copy()
+
+    return site_key, site_name
 
 # ═══════════════════════════════════════
 # 분류 함수
@@ -375,7 +405,7 @@ def process():
     df["권역"] = classify_region_series(df["주소1"])
 
     # ── 9) 사이트 그루핑 ──────────────────────────────
-    df["사이트키"] = build_site_groups(df)
+    df["사이트키"], df["대표사이트명"] = build_site_groups(df)
 
     # ── 10) 계약 상태 ─────────────────────────────────
     def contract_status(row):
@@ -385,7 +415,7 @@ def process():
         if r <= 90:  return "만료임박"
         if r <= 365: return "만료예정"
         return "정상운영"
-
+    
     df["계약상태"] = df.apply(contract_status, axis=1)
     df["잔여일수"] = (df["운영계약종료_dt"] - now).dt.days.fillna(-9999).astype(int)
 
@@ -393,15 +423,21 @@ def process():
     site_agg = (
         df.groupby("사이트키")
         .agg(
-            충전기수=("충전기ID",          "count"),
+            대표사이트명=("대표사이트명",    "first"),
+            충전소명=("충전소명",            "first"),
+            충전기수=("충전기ID",            "count"),
             총누적사용량=("누적사용량_daily","sum"),
             월사용량_전체합=("월사용량_전체","sum"),
             월사용량_최신합=("월사용량_최신","sum"),
             월사용량_전체평균=("월사용량_전체","mean"),
             월사용량_최신평균=("월사용량_최신","mean"),
-            권역=("권역",                  "first"),
-            충전소명=("충전소명",           "first"),
-            주소=("주소1",                 "first"),
+            권역=("권역",                    "first"),
+            주소=("주소1",                   "first"),
+            상세주소=("상세주소",            "first"),
+            계약상태=("계약상태",            "first"),
+            운영계약시작=("운영계약시작",    "first"),
+            운영계약종료=("운영계약종료",    "first"),
+            잔여일수=("잔여일수",            "first"),
         )
         .round(2)
         .reset_index()
@@ -439,11 +475,11 @@ def process():
 
     # ── 14) 충전기 레코드 정리 ────────────────────────
     keep_cols = [
-        "충전기ID", "충전소명", "상세주소", "주소1",
+        "충전기ID", "충전소명", "대표사이트명", "상세주소", "주소1",
         "충전기상태", "운영계약시작", "운영계약종료",
         "충전기모델명", "충전기유형", "충전용량",
-        "시리얼번호",   # ★ 추가
-        "위도", "경도", "모델분류", "권역", "사이트키",
+        "시리얼번호", "위도", "경도",
+        "모델분류", "권역", "사이트키", "대표사이트명",
         "계약상태", "잔여일수",
         "누적사용량_base", "누적사용량_daily",
         "월사용량_전체", "월사용량_최신", "일사용량_최신",

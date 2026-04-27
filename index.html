@@ -486,15 +486,14 @@ function contractBadge(v) {
   return v?`<span class="badge ${map[v]||"badge-gray"}">${emoji[v]||""}${v}</span>`:"-";
 }
 
-function copySiteUsage(value) {
-  const text = `${Math.round(value).toLocaleString('ko-KR')}kWh`;
+// 복사 함수 수정 - 숫자 대신 문자열 그대로 복사
+function copySiteUsage(text) {
   navigator.clipboard.writeText(text).then(() => {
-    // 버튼 텍스트 일시 변경
     const btns = document.querySelectorAll('#site-table-wrap button');
     btns.forEach(btn => {
       if (btn.textContent.includes('복사')) {
-        const original = btn.innerHTML;
-        btn.innerHTML  = '✅ 복사완료!';
+        const original       = btn.innerHTML;
+        btn.innerHTML        = '✅ 복사완료!';
         btn.style.background = '#c8e6c9';
         setTimeout(() => {
           btn.innerHTML        = original;
@@ -503,7 +502,6 @@ function copySiteUsage(value) {
       }
     });
   }).catch(() => {
-    // clipboard API 실패 시 fallback
     const el = document.createElement('textarea');
     el.value = text;
     document.body.appendChild(el);
@@ -513,6 +511,7 @@ function copySiteUsage(value) {
     alert(`복사됨: ${text}`);
   });
 }
+
 
 // ═══════════════════════════════════════
 // 사이트별 탭 전체 렌더링
@@ -546,8 +545,8 @@ function renderSitePage() {
       <td>${contractBadge(s.계약상태)}</td>
     </tr>`).join("");
 
-  const totalRecent = page.reduce((s, r) => s + (r.월사용량_최신합 || 0), 0);
-  const copyText    = `${Math.round(totalRecent).toLocaleString('ko-KR')}kWh`;
+  const avgRecent = page.reduce((s, r) => s + (r.월사용량_최신평균 || 0), 0) / page.length;
+  const copyText  = `[${Math.round(avgRecent)}kWh/월]`;
   
   document.getElementById("site-table-wrap").innerHTML = `
     <div class="table-wrap">
@@ -555,7 +554,7 @@ function renderSitePage() {
         <h3>🏢 사이트별 현황 [${lbl}]</h3>
         <div style="display:flex;gap:8px;">
           <!-- ★ 복사 버튼 -->
-          <button onclick="copySiteUsage(${Math.round(totalRecent)})"
+          <button onclick="copySiteUsage('${copyText}')"
             style="padding:6px 12px;border:none;border-radius:8px;
               background:#e8f5e9;color:#2e7d32;font-size:.82rem;
               font-weight:700;cursor:pointer;display:flex;

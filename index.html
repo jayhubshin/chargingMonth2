@@ -646,16 +646,14 @@ function renderSitePage() {
     </div>`;
 
   
-  // ── ③ 계약 현황 카드 (계약종료일별 그룹핑) ───────────────
-  // 계약종료일 기준으로 그룹핑
+    // ── ③ 계약 현황 카드 (계약종료일별 그룹핑) ───────────────
   const groupMap = {};
-  page.forEach(s => {
-    const key = fmtDate(s.운영계약종료) || "정보없음";
+  G.data.sites.forEach(s => {
+    const key = (fmtDate(s.운영계약종료) || "").trim() || "정보없음";
     if (!groupMap[key]) groupMap[key] = [];
     groupMap[key].push(s);
   });
 
-  // 만료일 기준 오름차순 정렬 (정보없음은 맨 뒤)
   const sortedKeys = Object.keys(groupMap).sort((a, b) => {
     if (a === "정보없음") return 1;
     if (b === "정보없음") return -1;
@@ -665,7 +663,6 @@ function renderSitePage() {
   const groupedCards = sortedKeys.map(dateKey => {
     const sites = groupMap[dateKey];
 
-    // 그룹 내 계약상태 (대표값 - 가장 심각한 상태 기준)
     const statusPriority = ["계약만료","만료임박","만료예정","정상운영","정보없음"];
     const worstStatus = statusPriority.find(st => sites.some(s => s.계약상태 === st)) || "정보없음";
 
@@ -678,7 +675,6 @@ function renderSitePage() {
     const totalChargers = sites.reduce((s, r) => s + (r.충전기수 || 0), 0);
     const totalUsage    = sites.reduce((s, r) => s + (r[uk] || 0), 0);
 
-    // 그룹 내 카드들
     const cards = sites.map(s => {
       const remText = s.잔여일수 != null && s.잔여일수 > -9000
         ? (s.잔여일수 < 0
@@ -737,7 +733,6 @@ function renderSitePage() {
 
     return `
     <div style="margin-bottom:20px;">
-      <!-- 그룹 헤더 -->
       <div style="display:flex;align-items:center;gap:10px;
         padding:10px 16px;background:var(--card);
         border-radius:var(--radius) var(--radius) 0 0;
@@ -754,7 +749,6 @@ function renderSitePage() {
           ⚡ ${fmtK(totalUsage)} kWh/월
         </span>
       </div>
-      <!-- 카드 그리드 -->
       <div style="display:grid;
         grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
         gap:10px;padding:12px;
@@ -774,6 +768,7 @@ function renderSitePage() {
       ${groupedCards || `<div style="background:var(--card);border-radius:var(--radius);
         padding:30px;text-align:center;color:var(--text2);">데이터 없음</div>`}
     </div>`;
+
 }
 
 // ═══════════════════════════════════════
